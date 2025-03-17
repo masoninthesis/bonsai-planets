@@ -213,22 +213,22 @@ function updateCharacter() {
     
     // Determine movement direction and bunny orientation
     if (moveDirection.z > 0) {
-      // Forward (W/Up): Bunny faces away from camera
-      rotationAxis.add(cameraRight.clone().multiplyScalar(-1)); // FIXED: Swapped back to original
-      bunnyForward.copy(cameraForward); // FIXED: Swapped back to original
+      // Forward (W/Up): Bunny faces away from camera (back to camera)
+      rotationAxis.add(cameraRight.clone().multiplyScalar(-1));
+      bunnyForward.copy(cameraForward.clone().negate()); // COMPLETELY REVERSED THIS
     } else if (moveDirection.z < 0) {
       // Backward (S/Down): Bunny faces toward camera
-      rotationAxis.add(cameraRight.clone()); // FIXED: Swapped back to original
-      bunnyForward.copy(cameraForward).negate(); // FIXED: Swapped back to original
+      rotationAxis.add(cameraRight.clone());
+      bunnyForward.copy(cameraForward); // COMPLETELY REVERSED THIS
     }
     
     if (moveDirection.x < 0) {
       // Left (A/Left): Bunny shows left profile (faces right relative to camera)
-      rotationAxis.add(cameraForward.clone().negate()); // Rotate planet forward (inverted)
+      rotationAxis.add(cameraForward.clone().negate());
       bunnyForward.copy(cameraRight);
     } else if (moveDirection.x > 0) {
       // Right (D/Right): Bunny shows right profile (faces left relative to camera)
-      rotationAxis.add(cameraForward.clone()); // Rotate planet backward (inverted)
+      rotationAxis.add(cameraForward.clone());
       bunnyForward.copy(cameraRight).negate();
     }
     
@@ -265,8 +265,12 @@ function updateCharacter() {
         // Recalculate forward to ensure orthogonality
         bunnyForward.crossVectors(bunnyUp, bunnyRight).normalize();
         
-        // Create rotation matrix
-        const rotMatrix = new THREE.Matrix4().makeBasis(bunnyRight, bunnyUp, bunnyForward.negate()); // Negate forward since model faces +Z
+        // Create rotation matrix with negation since model faces +Z
+        const rotMatrix = new THREE.Matrix4().makeBasis(
+          bunnyRight,
+          bunnyUp,
+          bunnyForward.clone().negate()
+        );
         const targetRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
         
         // Smoothly interpolate rotation
