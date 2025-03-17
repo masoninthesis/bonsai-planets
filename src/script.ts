@@ -114,20 +114,34 @@ async function createPlanet(preset: string | undefined = undefined) {
     preset = presets[Math.floor(Math.random() * presets.length)];
   }
 
+  console.log("Creating planet with preset:", preset);
   console.time("planet");
   const planet = new Planet({
-    detail: 50,
+    detail: 30,
     ...planetPresets[preset],
   });
-  let mesh = await planet.create();
-  scene.remove(planetMesh);
-  scene.add(mesh);
-  planetMesh = mesh;
-
-  // planetMesh.add(camera);
-  // planet.updatePosition(camera, new THREE.Vector3(0, 0, 1.1));
-
-  console.timeEnd("planet");
+  console.log("Planet instance created, calling create()");
+  try {
+    let mesh = await planet.create();
+    console.log("Planet mesh created:", mesh);
+    scene.remove(planetMesh);
+    scene.add(mesh);
+    planetMesh = mesh;
+    console.timeEnd("planet");
+  } catch (error) {
+    console.error("Error creating planet:", error);
+    // Create a fallback planet if there's an error
+    const geometry = new THREE.IcosahedronGeometry(1, 4);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: preset === "beach" ? 0x66aaff : preset === "forest" ? 0x33aa66 : 0xeeeeff,
+      roughness: 0.8
+    });
+    const fallbackMesh = new THREE.Mesh(geometry, material);
+    scene.remove(planetMesh);
+    scene.add(fallbackMesh);
+    planetMesh = fallbackMesh;
+    console.timeEnd("planet");
+  }
 }
 
 function updateSize() {

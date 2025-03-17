@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-const basePath = "/tiny-planets/";
+// Change from absolute path to relative path for local development
+const basePath = "./";
 
 const lowPolyNatureCollectionModels: Record<
   string,

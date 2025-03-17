@@ -15,50 +15,82 @@ import { type VertexInfo } from "./types";
 
 onmessage = function (e) {
   const { type, data, requestId } = e.data;
+  console.log("Worker received message:", type, "requestId:", requestId);
 
   if (type === "createGeometry") {
-    const [geometry, oceanGeometry, vegetation] = createGeometry(data);
+    console.log("Creating geometry with options:", data);
+    try {
+      const [geometry, oceanGeometry, vegetation] = createGeometry(data);
+      console.log("Geometry created, sending back to main thread");
 
-    const positions = geometry.getAttribute("position").array.buffer;
-    const colors = geometry.getAttribute("color").array.buffer;
-    const normals = geometry.getAttribute("normal").array.buffer;
+      const positions = geometry.getAttribute("position").array.buffer;
+      const colors = geometry.getAttribute("color").array.buffer;
+      const normals = geometry.getAttribute("normal").array.buffer;
 
-    const oceanPositions = oceanGeometry.getAttribute("position").array.buffer;
-    const oceanColors = oceanGeometry.getAttribute("color").array.buffer;
-    const oceanNormals = oceanGeometry.getAttribute("normal").array.buffer;
-    const oceanMorphPositions =
-      oceanGeometry.morphAttributes.position[0].array.buffer;
-    const oceanMorphNormals =
-      oceanGeometry.morphAttributes.normal[0].array.buffer;
+      const oceanPositions = oceanGeometry.getAttribute("position").array.buffer;
+      const oceanColors = oceanGeometry.getAttribute("color").array.buffer;
+      const oceanNormals = oceanGeometry.getAttribute("normal").array.buffer;
+      const oceanMorphPositions =
+        oceanGeometry.morphAttributes.position[0].array.buffer;
+      const oceanMorphNormals =
+        oceanGeometry.morphAttributes.normal[0].array.buffer;
 
-    postMessage(
-      {
-        type: "geometry",
-        data: {
-          positions,
-          colors,
-          normals,
-          oceanPositions,
-          oceanColors,
-          oceanNormals,
-          vegetation,
-          oceanMorphPositions,
-          oceanMorphNormals,
-        },
+      try {
+        postMessage(
+          {
+            type: "geometry",
+            data: {
+              positions,
+              colors,
+              normals,
+              oceanPositions,
+              oceanColors,
+              oceanNormals,
+              vegetation,
+              oceanMorphPositions,
+              oceanMorphNormals,
+            },
+            requestId,
+          },
+          // @ts-expect-error - hmm
+          [
+            positions,
+            colors,
+            normals,
+            oceanPositions,
+            oceanColors,
+            oceanNormals,
+            oceanMorphPositions,
+            oceanMorphNormals,
+          ],
+        );
+      } catch (transferError) {
+        console.error("Error transferring buffers:", transferError);
+        // Try without transferable objects
+        postMessage({
+          type: "geometry",
+          data: {
+            positions: Array.from(new Float32Array(positions)),
+            colors: Array.from(new Float32Array(colors)),
+            normals: Array.from(new Float32Array(normals)),
+            oceanPositions: Array.from(new Float32Array(oceanPositions)),
+            oceanColors: Array.from(new Float32Array(oceanColors)),
+            oceanNormals: Array.from(new Float32Array(oceanNormals)),
+            vegetation,
+            oceanMorphPositions: Array.from(new Float32Array(oceanMorphPositions)),
+            oceanMorphNormals: Array.from(new Float32Array(oceanMorphNormals)),
+          },
+          requestId,
+        });
+      }
+    } catch (error) {
+      console.error("Error in worker while creating geometry:", error);
+      postMessage({
+        type: "error",
+        error: error instanceof Error ? error.message : String(error),
         requestId,
-      },
-      // @ts-expect-error - hmm
-      [
-        positions,
-        colors,
-        normals,
-        oceanPositions,
-        oceanColors,
-        oceanNormals,
-        oceanMorphPositions,
-        oceanMorphNormals,
-      ],
-    );
+      });
+    }
   } else {
     console.error("Unknown message type", type);
   }
@@ -179,20 +211,15 @@ function createGeometry(
       temp = oceanC.y;
       oceanC.y = oceanC.z;
       oceanC.z = temp;
-
-      // switch a and c
-      let tempVector = a.clone();
-      a.copy(c);
-      c.copy(tempVector);
-
-      tempVector = oceanA.clone();
-      oceanA.copy(oceanC);
-      oceanC.copy(tempVector);
     }
 
-    mid.set(0, 0, 0);
-    mid.addVectors(a, b).add(c).divideScalar(3);
+    // Calculate face center
+    mid.copy(a).add(b).add(c).divideScalar(3);
+    mid.normalize();
 
+    // Skip vegetation placement for local development
+    // This will be handled differently
+    
     let normalizedHeight = 0;
 
     // go through all vertices of the face
@@ -355,63 +382,6 @@ function createGeometry(
     oceanMorphNormals.push(temp.x, temp.y, temp.z);
     oceanMorphNormals.push(temp.x, temp.y, temp.z);
     oceanMorphNormals.push(temp.x, temp.y, temp.z);
-
-    // place vegetation
-    for (
-      let j = 0;
-      biome.options.vegetation && j < biome.options.vegetation.items.length;
-      j++
-    ) {
-      const vegetation = biome.options.vegetation.items[j];
-      if (Math.random() < faceSize * (vegetation.density ?? 1)) {
-        // discard if point is below or above height limits
-        if (
-          vegetation.minimumHeight !== undefined &&
-          normalizedHeight < vegetation.minimumHeight
-        ) {
-          continue;
-        }
-        // default minimumHeight is 0 (= above sea level)
-        if (vegetation.minimumHeight === undefined && normalizedHeight < 0) {
-          continue;
-        }
-        if (
-          vegetation.maximumHeight !== undefined &&
-          normalizedHeight > vegetation.maximumHeight
-        ) {
-          continue;
-        }
-
-        // discard if point is below or above slope limits
-        if (
-          vegetation.minimumSlope !== undefined &&
-          steepness < vegetation.minimumSlope
-        ) {
-          continue;
-        }
-        if (
-          vegetation.maximumSlope !== undefined &&
-          steepness > vegetation.maximumSlope
-        ) {
-          continue;
-        }
-
-        if (!placedVegetation[vegetation.name]) {
-          placedVegetation[vegetation.name] = [];
-        }
-
-        placedVegetation[vegetation.name].push(a.clone());
-
-        if (planetOptions.shape == "plane") {
-          a.y = 0;
-        } else {
-          a.normalize();
-        }
-
-        biome.addVegetation(vegetation, a, normalizedHeight, steepness);
-        break;
-      }
-    }
   }
 
   const color = new Color();

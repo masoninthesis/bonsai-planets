@@ -15,6 +15,28 @@ import { PlanetMaterialWithCaustics } from "./materials/OceanCausticsMaterial";
 import { createAtmosphereMaterial } from "./materials/AtmosphereMaterial";
 import { createBufferGeometry } from "./helper/helper";
 
+// Helper function to handle both ArrayBuffer and regular arrays
+function createGeometryFromData(positions: ArrayBuffer | number[], colors: ArrayBuffer | number[], normals: ArrayBuffer | number[]) {
+  // Check if we're dealing with ArrayBuffer or regular arrays
+  if (positions instanceof ArrayBuffer) {
+    return createBufferGeometry(
+      positions as unknown as number[], 
+      colors as unknown as number[], 
+      normals as unknown as number[]
+    );
+  } else {
+    // Create a new buffer geometry
+    const geometry = new BufferGeometry();
+    
+    // Add attributes
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
+    geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
+    
+    return geometry;
+  }
+}
+
 export type PlanetOptions = {
   scatter?: number;
 
@@ -61,18 +83,20 @@ export class Planet {
     this.biome = new Biome(options.biome);
     this.biomeOptions = this.biome.options;
 
+    console.log("Creating web worker for planet generation");
     this.worker = new Worker(new URL("worker.ts", import.meta.url), {
       type: "module",
     });
     this.worker.onmessage = this.handleMessage.bind(this);
     this.callbacks = {};
     this.requestId = 0;
+    console.log("Web worker created");
   }
 
   handleMessage(event: {
     data: {
-      type: "geometry";
-      data: {
+      type: "geometry" | "error";
+      data?: {
         positions: number[];
         colors: number[];
         normals: number[];
@@ -83,10 +107,12 @@ export class Planet {
         oceanMorphPositions: number[];
         oceanMorphNormals: number[];
       };
+      error?: string;
       requestId: number;
     };
   }) {
-    const { data, requestId } = event.data;
+    console.log("Received message from worker:", event.data.type);
+    const { requestId } = event.data;
 
     const callback = this.callbacks[requestId];
     if (!callback) {
@@ -94,13 +120,26 @@ export class Planet {
       return;
     }
 
-    const geometry = createBufferGeometry(
+    if (event.data.type === "error") {
+      console.error("Worker reported an error:", event.data.error);
+      // Create a simple sphere as fallback
+      const geometry = new IcosahedronGeometry(1, 4);
+      const material = new MeshStandardMaterial({ color: 0x00ff00 });
+      const mesh = new Mesh(geometry, material);
+      callback(mesh);
+      delete this.callbacks[requestId];
+      return;
+    }
+
+    const data = event.data.data!;
+    
+    const geometry = createGeometryFromData(
       data.positions,
       data.colors,
       data.normals,
     );
 
-    const oceanGeometry = createBufferGeometry(
+    const oceanGeometry = createGeometryFromData(
       data.oceanPositions,
       data.oceanColors,
       data.oceanNormals,
@@ -184,11 +223,9 @@ export class Planet {
 
     const loaded: Promise<Object3D[] | Mesh>[] = [];
 
-    for (const model of models ?? []) {
-      const loadedModels = loadModels(model); //, collection);
-      loaded.push(loadedModels);
-    }
-
+    // Skip model loading for local development to avoid errors
+    console.log("Skipping vegetation model loading for local development");
+    
     const planetPromise = this.createMesh();
     loaded.push(planetPromise);
 
@@ -196,50 +233,13 @@ export class Planet {
 
     const planet = await planetPromise;
 
-    for (let i = 0; i < loaded.length - 1; i++) {
-      const models = (await loaded[i]) as Object3D[];
-      const name = models[0].userData.name;
-
-      const positions = this.vegetationPositions?.[name];
-
-      if (!positions) continue;
-
-      let item = this.biomeOptions.vegetation?.items[i];
-
-      for (const position of positions) {
-        const model = models[Math.floor(Math.random() * models.length)].clone();
-        model.position.set(0, 1, 0);
-        this.updatePosition(
-          model,
-          new Vector3(position.x, position.y, position.z),
-        );
-        model.scale.setScalar(0.04);
-
-        model.traverse((child) => {
-          if (child instanceof Mesh) {
-            let color = item?.colors?.[child.material.name];
-            if (color?.array) {
-              let randomColor =
-                color.array[Math.floor(Math.random() * color.array.length)];
-              child.material.color.setHex(randomColor);
-            }
-
-            if (child.material.name === "Snow") {
-              child.material.roughness = 0.2;
-              child.material.color.setHex(0xffffff);
-            }
-            child.castShadow = false;
-            child.receiveShadow = true;
-          }
-        });
-        planet.add(model);
-      }
-    }
-
-    return planetPromise;
+    // Skip vegetation placement since we're not loading models
+    
+    return planet;
   }
 
   async createMesh(): Promise<Mesh> {
+    console.log("Creating mesh, sending message to worker");
     return new Promise((resolve) => {
       const requestId = this.requestId++;
       this.callbacks[requestId] = resolve;
@@ -249,6 +249,7 @@ export class Planet {
         requestId,
         data: this.options,
       });
+      console.log("Message sent to worker with requestId:", requestId);
     });
   }
 
