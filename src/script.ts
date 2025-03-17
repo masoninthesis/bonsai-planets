@@ -142,24 +142,36 @@ function updateCharacter() {
     // Calculate rotation axis and angle based on input
     let rotationAxis = new Vector3();
     
-    // Use fixed world axes for consistent rotation
+    // Get camera-relative directions for intuitive controls
+    const cameraForward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    // Project onto the horizontal plane and normalize
+    cameraForward.y = 0;
+    cameraForward.normalize();
+    
+    const cameraRight = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    // Project onto the horizontal plane and normalize
+    cameraRight.y = 0;
+    cameraRight.normalize();
+    
+    // Combine directions based on input - invert both axes for natural controls
     if (moveDirection.x !== 0) {
-      // Left/right movement rotates around the y axis
-      rotationAxis.add(new Vector3(0, 1, 0).multiplyScalar(-moveDirection.x));
+      // Left/right movement relative to camera view (inverted)
+      rotationAxis.add(cameraForward.clone().multiplyScalar(moveDirection.x));
     }
     if (moveDirection.z !== 0) {
-      // Forward/backward movement rotates around the x axis
-      rotationAxis.add(new Vector3(1, 0, 0).multiplyScalar(moveDirection.z));
+      // Forward/backward movement relative to camera view (inverted)
+      rotationAxis.add(cameraRight.clone().multiplyScalar(-moveDirection.z));
     }
     
     // Normalize rotation axis and apply rotation to planet
     if (rotationAxis.lengthSq() > 0) {
       rotationAxis.normalize();
       const rotationAngle = MOVE_SPEED;
-      planetMesh.rotateOnWorldAxis(rotationAxis, rotationAngle);
+      // Invert the rotation to make it feel like controlling the ball
+      planetMesh.rotateOnWorldAxis(rotationAxis, -rotationAngle);
       
       // Calculate rotation for ball rolling effect
-      const rollAxis = new Vector3(1, 0, 0).cross(rotationAxis).normalize();
+      const rollAxis = rotationAxis.clone().cross(new Vector3(0, 1, 0)).normalize();
       const rollAngle = rotationAngle * 10;
       const deltaRotation = new THREE.Quaternion().setFromAxisAngle(rollAxis, rollAngle);
       characterRotation.premultiply(deltaRotation);
