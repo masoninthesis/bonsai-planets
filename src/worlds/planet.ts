@@ -298,6 +298,8 @@ export class Planet {
     
     // Check if there are any positions at all
     const totalPositions = Object.values(this.vegetationPositions).reduce((sum, positions) => sum + positions.length, 0);
+    console.log(`Total vegetation positions: ${totalPositions}`);
+    
     if (totalPositions === 0) {
       console.log("No vegetation positions found in any category, adding manual models");
       await this.addManualModels(planet);
@@ -330,7 +332,13 @@ export class Planet {
             const model = models[modelIndex].clone();
             
             // Scale the model down to fit the planet
-            const scale = 0.025; // Reduced from 0.05 to 0.025
+            let scale = 0.025; // Default scale
+            
+            // Make rocks smaller
+            if (name.includes("Rock")) {
+              scale = 0.001; // Much smaller scale for rocks
+            }
+            
             model.scale.set(scale, scale, scale);
             
             // Position and orient the model
@@ -366,16 +374,15 @@ export class Planet {
     console.log("Adding manual models to the planet");
     
     // Define positions around the planet
-    const positions = [
-      new Vector3(0, 1, 0),
-      new Vector3(1, 0, 0),
-      new Vector3(0, 0, 1),
-      new Vector3(-1, 0, 0),
-      new Vector3(0, 0, -1),
-      new Vector3(0.7, 0.7, 0),
-      new Vector3(-0.7, 0.7, 0),
-      new Vector3(0, -1, 0),
-    ];
+    const positions: Vector3[] = [];
+    
+    // Add more positions around the planet (60 total)
+    for (let i = 0; i < 60; i++) {
+      const x = Math.random() * 2 - 1;
+      const y = Math.random() * 2 - 1;
+      const z = Math.random() * 2 - 1;
+      positions.push(new Vector3(x, y, z).normalize());
+    }
     
     try {
       // Load models directly using GLTFLoader
@@ -384,14 +391,17 @@ export class Planet {
       // Determine which models to load based on the planet type
       let treeModelPath = "/lowpoly_nature/PineTree_1.gltf";
       let secondaryTreePath = "/lowpoly_nature/CommonTree_1.gltf";
+      let thirdTreePath = "/lowpoly_nature/Willow_1.gltf";
       
       // Check the biome type to determine which models to use
       if (this.biomeOptions.preset === "beach") {
         treeModelPath = "/lowpoly_nature/PalmTree_1.gltf";
         secondaryTreePath = "/lowpoly_nature/PalmTree_2.gltf";
+        thirdTreePath = "/lowpoly_nature/Bush_1.gltf";
       } else if (this.biomeOptions.preset === "snowForest") {
         treeModelPath = "/lowpoly_nature/PineTree_Snow_1.gltf";
         secondaryTreePath = "/lowpoly_nature/CommonTree_Snow_1.gltf";
+        thirdTreePath = "/lowpoly_nature/Willow_Snow_1.gltf";
       }
       
       // Load primary tree model
@@ -426,26 +436,43 @@ export class Planet {
         );
       });
       
-      // Load Rock model
-      const rockPromise = new Promise<Object3D>((resolve, reject) => {
+      // Load third tree model
+      const thirdTreePromise = new Promise<Object3D>((resolve, reject) => {
         loader.load(
-          "/lowpoly_nature/Rock_1.gltf",
+          thirdTreePath,
           (gltf) => {
-            console.log("Loaded Rock model");
+            console.log(`Loaded third tree model: ${thirdTreePath}`);
             resolve(gltf.scene);
           },
           undefined,
           (error) => {
-            console.error("Error loading Rock model:", error);
+            console.error(`Error loading third tree model: ${error}`);
+            reject(error);
+          }
+        );
+      });
+      
+      // Load rock model
+      const rockPromise = new Promise<Object3D>((resolve, reject) => {
+        loader.load(
+          "/lowpoly_nature/Rock_1.gltf",
+          (gltf) => {
+            console.log("Loaded rock model");
+            resolve(gltf.scene);
+          },
+          undefined,
+          (error) => {
+            console.error("Error loading rock model:", error);
             reject(error);
           }
         );
       });
       
       // Wait for all models to load
-      const [primaryTree, secondaryTree, rock] = await Promise.all([
+      const [primaryTree, secondaryTree, thirdTree, rock] = await Promise.all([
         primaryTreePromise,
         secondaryTreePromise,
+        thirdTreePromise,
         rockPromise
       ]);
       
@@ -454,15 +481,18 @@ export class Planet {
         let model: Object3D;
         
         // Choose model based on index
-        if (index < 3) {
+        if (index < 20) {
           model = primaryTree.clone();
           model.scale.set(0.025, 0.025, 0.025);
-        } else if (index < 6) {
+        } else if (index < 40) {
           model = secondaryTree.clone();
+          model.scale.set(0.025, 0.025, 0.025);
+        } else if (index < 58) {
+          model = thirdTree.clone();
           model.scale.set(0.025, 0.025, 0.025);
         } else {
           model = rock.clone();
-          model.scale.set(0.015, 0.015, 0.015);
+          model.scale.set(0.001, 0.001, 0.001); // Smaller rocks
         }
         
         // Position and orient the model
@@ -476,14 +506,6 @@ export class Planet {
         
         // Add to the planet
         planet.add(model);
-        
-        // Add a small sphere to mark the position (for debugging)
-        const sphere = new Mesh(
-          new SphereGeometry(0.02),
-          new MeshBasicMaterial({ color: 0xff0000 })
-        );
-        sphere.position.copy(normalizedPosition);
-        planet.add(sphere);
       });
       
       console.log(`Added ${positions.length} models to the planet`);

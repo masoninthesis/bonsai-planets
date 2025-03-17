@@ -224,7 +224,12 @@ function createGeometry(
         if (item.density === undefined || item.density <= 0) continue;
         
         // Calculate probability based on density and face size
-        const probability = item.density * faceSize * 0.8;
+        let probability = item.density * faceSize * 5.0;
+        
+        // Reduce probability for rocks
+        if (item.name.includes("Rock")) {
+          probability *= 0.1; // 90% reduction in rock placement probability
+        }
         
         // Random chance to place vegetation
         if (Math.random() > probability) continue;
@@ -531,6 +536,33 @@ function createGeometry(
     }
     
     console.log("Added manual vegetation positions:", Object.keys(placedVegetation).map(key => 
+      `${key}: ${placedVegetation[key].length} positions`
+    ));
+  }
+  
+  // Add additional vegetation positions if we have too few
+  if (totalPositions < 100) {
+    console.log("Too few vegetation positions generated, adding more");
+    
+    // Determine which types to add based on existing vegetation
+    const treeTypes = ["PineTree", "CommonTree", "Willow", "PalmTree", "BirchTree"];
+    const existingTypes = Object.keys(placedVegetation).filter(type => !type.includes("Rock"));
+    
+    // Add more positions for existing tree types
+    for (const type of treeTypes) {
+      if (existingTypes.includes(type)) {
+        // Add 40 random positions around the planet
+        for (let i = 0; i < 40; i++) {
+          const x = Math.random() * 2 - 1;
+          const y = Math.random() * 2 - 1;
+          const z = Math.random() * 2 - 1;
+          const pos = new Vector3(x, y, z).normalize();
+          placedVegetation[type].push(pos);
+        }
+      }
+    }
+    
+    console.log("Added additional vegetation positions:", Object.keys(placedVegetation).map(key => 
       `${key}: ${placedVegetation[key].length} positions`
     ));
   }

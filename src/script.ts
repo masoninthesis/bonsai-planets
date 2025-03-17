@@ -148,7 +148,7 @@ async function createPlanet(preset: string | undefined = undefined) {
   console.log("Creating planet with preset:", preset);
   console.time("planet");
   const planet = new Planet({
-    detail: 30,
+    detail: 60,
     ...planetPresets[preset],
   });
   console.log("Planet instance created, calling create()");
