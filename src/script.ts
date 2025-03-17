@@ -88,7 +88,8 @@ const BASE_MOVE_SPEED = 0.02; // Base movement speed
 const MIN_MOVE_SPEED = 0.005; // Minimum movement speed when zoomed in
 let MOVE_SPEED = BASE_MOVE_SPEED; // Dynamic movement speed
 const BASE_CHARACTER_SIZE = 0.05; // Base character size
-const MIN_CHARACTER_SIZE = 0.03; // Minimum character size when zoomed in
+const MAX_CHARACTER_SIZE = 0.1; // 200% size when zoomed out
+const MIN_CHARACTER_SIZE = 0.025; // 50% size when zoomed in
 let characterRotation = new THREE.Quaternion();
 
 let total = 0;
@@ -169,9 +170,9 @@ function updateCharacter() {
   // Update movement speed - slower when zoomed in
   MOVE_SPEED = MIN_MOVE_SPEED + (BASE_MOVE_SPEED - MIN_MOVE_SPEED) * zoomFactor;
   
-  // Update character size - smaller when zoomed in
-  const newSize = MIN_CHARACTER_SIZE + (BASE_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
-  if (character.scale.x !== newSize) {
+  // Update character size - smaller when zoomed in, larger when zoomed out
+  const newSize = MIN_CHARACTER_SIZE + (MAX_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
+  if (character.scale.x !== newSize / BASE_CHARACTER_SIZE) {
     character.scale.set(newSize / BASE_CHARACTER_SIZE, newSize / BASE_CHARACTER_SIZE, newSize / BASE_CHARACTER_SIZE);
   }
   
@@ -291,7 +292,7 @@ document.addEventListener("keydown", (event) => {
         // Calculate current character size for proper jump effect
         const camDistance = camera.position.distanceTo(characterPosition);
         const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
-        const currentSize = MIN_CHARACTER_SIZE + (BASE_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
+        const currentSize = MIN_CHARACTER_SIZE + (MAX_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
         
         // Set jump velocity in the direction away from planet center
         const jumpDirection = characterPosition.clone().normalize();
@@ -424,7 +425,7 @@ async function createCharacter() {
   
   try {
     // Create a ball character with more visible materials
-    const geometry = new THREE.SphereGeometry(0.05, 32, 32);
+    const geometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE, 32, 32);
     
     // Create a material that stands out against the planet terrain
     const material = new THREE.MeshStandardMaterial({ 
@@ -509,7 +510,7 @@ async function createPlanet(preset: string | undefined = undefined) {
         // Calculate current character size
         const camDistance = camera.position.distanceTo(characterPosition);
         const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
-        const currentSize = MIN_CHARACTER_SIZE + (BASE_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
+        const currentSize = MIN_CHARACTER_SIZE + (MAX_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
         
         // Cast a ray down from the character to find terrain
         const raycaster = new THREE.Raycaster();
