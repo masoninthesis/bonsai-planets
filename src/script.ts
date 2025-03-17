@@ -84,7 +84,11 @@ let character: THREE.Object3D | null = null;
 let characterPosition = new Vector3(0, 1.1, 0); // Position character on top of planet (y-axis)
 let isJumping = false;
 let moveDirection = new Vector3(0, 0, 0);
-const MOVE_SPEED = 0.02; // Movement speed
+const BASE_MOVE_SPEED = 0.02; // Base movement speed
+const MIN_MOVE_SPEED = 0.005; // Minimum movement speed when zoomed in
+let MOVE_SPEED = BASE_MOVE_SPEED; // Dynamic movement speed
+const BASE_CHARACTER_SIZE = 0.05; // Base character size
+const MIN_CHARACTER_SIZE = 0.03; // Minimum character size when zoomed in
 let characterRotation = new THREE.Quaternion();
 
 let total = 0;
@@ -158,6 +162,19 @@ renderer.setAnimationLoop((delta) => {
 function updateCharacter() {
   if (!character || !planetMesh) return;
   
+  // Calculate character speed and size based on camera distance
+  const camDistance = camera.position.distanceTo(characterPosition);
+  const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+  
+  // Update movement speed - slower when zoomed in
+  MOVE_SPEED = MIN_MOVE_SPEED + (BASE_MOVE_SPEED - MIN_MOVE_SPEED) * zoomFactor;
+  
+  // Update character size - smaller when zoomed in
+  const newSize = MIN_CHARACTER_SIZE + (BASE_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
+  if (character.scale.x !== newSize) {
+    character.scale.set(newSize / BASE_CHARACTER_SIZE, newSize / BASE_CHARACTER_SIZE, newSize / BASE_CHARACTER_SIZE);
+  }
+  
   // Store the previous position to reset if we don't find valid terrain
   const previousPosition = characterPosition.clone();
   
@@ -180,7 +197,7 @@ function updateCharacter() {
     const hitPoint = intersects[0].point;
     
     // Set character position to sit on terrain (adding small offset for the ball radius)
-    characterPosition = hitPoint.clone().normalize().multiplyScalar(hitPoint.length() + 0.05);
+    characterPosition = hitPoint.clone().normalize().multiplyScalar(hitPoint.length() + newSize);
   } else {
     // Safety fallback: if no terrain found, keep previous position
     characterPosition = previousPosition;
@@ -228,7 +245,7 @@ function updateCharacter() {
       
       if (recastHits.length > 0 && recastHits[0].distance < 3) {
         const newHitPoint = recastHits[0].point;
-        characterPosition = newHitPoint.clone().normalize().multiplyScalar(newHitPoint.length() + 0.05);
+        characterPosition = newHitPoint.clone().normalize().multiplyScalar(newHitPoint.length() + newSize);
       }
       
       // Calculate rotation for ball rolling effect
@@ -271,9 +288,14 @@ document.addEventListener("keydown", (event) => {
       if (!isJumping) {
         isJumping = true;
         
+        // Calculate current character size for proper jump effect
+        const camDistance = camera.position.distanceTo(characterPosition);
+        const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+        const currentSize = MIN_CHARACTER_SIZE + (BASE_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
+        
         // Set jump velocity in the direction away from planet center
         const jumpDirection = characterPosition.clone().normalize();
-        const jumpDistance = 0.15; // Jump height
+        const jumpDistance = 0.15 * (currentSize / BASE_CHARACTER_SIZE); // Scale jump height with character size
         
         // Animation loop for the jump
         let jumpTime = 0;
@@ -484,6 +506,11 @@ async function createPlanet(preset: string | undefined = undefined) {
     // (needed to ensure all planet meshes are properly loaded)
     setTimeout(() => {
       if (character && planetMesh) {
+        // Calculate current character size
+        const camDistance = camera.position.distanceTo(characterPosition);
+        const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+        const currentSize = MIN_CHARACTER_SIZE + (BASE_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
+        
         // Cast a ray down from the character to find terrain
         const raycaster = new THREE.Raycaster();
         const rayStart = new Vector3(0, 1.5, 0); // Start above planet
@@ -495,7 +522,7 @@ async function createPlanet(preset: string | undefined = undefined) {
         if (intersects.length > 0) {
           // Position character on detected terrain
           const hitPoint = intersects[0].point;
-          characterPosition = hitPoint.clone().add(new Vector3(0, 0.05, 0)); // Add ball radius
+          characterPosition = hitPoint.clone().add(new Vector3(0, currentSize, 0)); // Add current ball radius
           character.position.copy(characterPosition);
           
           // Update orbit controls target
