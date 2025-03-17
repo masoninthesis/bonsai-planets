@@ -348,39 +348,139 @@ document.addEventListener("keydown", (event) => {
           // Calculate jump offset (max at middle of jump)
           const offset = jumpDirection.clone().multiplyScalar(jumpDistance * heightFactor);
           
-          // Apply offset to character position
-          if (character) {
-            // Directly add the jump offset to the base characterPosition
-            // This will move the character away from the planet
-            character.position.copy(characterPosition.clone().add(offset));
+          // Process movement during jump
+          if (character && planetMesh && moveDirection.lengthSq() > 0) {
+            // Apply movement by rotating the planet, similar to updateCharacter
+            // Get camera-relative directions
+            const cameraForward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            cameraForward.y = 0;
+            cameraForward.normalize();
             
-            // Get the character's up vector (direction from planet center to character)
-            const characterUp = characterPosition.clone().normalize();
+            const cameraRight = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            cameraRight.y = 0;
+            cameraRight.normalize();
             
-            // Create a rotation for the forward tilt while maintaining proper up direction
-            const tiltAxis = new THREE.Vector3().crossVectors(characterUp, new THREE.Vector3(0, 1, 0)).normalize();
+            // Create rotation axis from movement direction
+            let rotationAxis = new Vector3();
+            let bunnyForward = new Vector3(); // Direction the bunny should face
             
-            if (tiltAxis.lengthSq() > 0.01) {  // Ensure we have a valid rotation axis
-              // Calculate tilt angle based on jump progress
-              let tiltAngle = 0;
+            // Determine movement direction and bunny orientation
+            if (moveDirection.z > 0) {
+              rotationAxis.add(cameraRight.clone().multiplyScalar(-1));
+              bunnyForward.copy(cameraForward.clone().negate());
+            } else if (moveDirection.z < 0) {
+              rotationAxis.add(cameraRight.clone());
+              bunnyForward.copy(cameraForward);
+            }
+            
+            if (moveDirection.x < 0) {
+              rotationAxis.add(cameraForward.clone().negate());
+              bunnyForward.copy(cameraRight);
+            } else if (moveDirection.x > 0) {
+              rotationAxis.add(cameraForward.clone());
+              bunnyForward.copy(cameraRight).negate();
+            }
+            
+            // Apply planet rotation if there's movement
+            if (rotationAxis.lengthSq() > 0) {
+              rotationAxis.normalize();
+              const airMoveFactor = 0.7; // Slightly reduced control in air
+              const rotationAngle = MOVE_SPEED * airMoveFactor;
+              planetMesh.rotateOnWorldAxis(rotationAxis, -rotationAngle);
               
-              if (jumpProgress < 0.5) {
-                // Forward tilt for ascent (0 to max)
-                tiltAngle = Math.PI * 0.15 * (jumpProgress * 2);
-              } else {
-                // Backward tilt for descent (max to 0)
-                tiltAngle = Math.PI * 0.15 * (2 - jumpProgress * 2);
+              // Update characterPosition based on planet rotation
+              // This will help maintain a consistent position relative to the planet
+              const raycaster = new THREE.Raycaster();
+              raycaster.set(
+                characterPosition.clone().normalize().multiplyScalar(1.5),
+                characterPosition.clone().negate().normalize()
+              );
+              const hits = raycaster.intersectObject(planetMesh, false);
+              
+              if (hits.length > 0 && hits[0].distance < 3) {
+                const hitPoint = hits[0].point;
+                characterPosition = hitPoint.clone().normalize().multiplyScalar(hitPoint.length() + currentSize * 0.5);
               }
               
-              // Create a quaternion for the tilt
-              const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(tiltAxis, tiltAngle);
+              // Update character orientation to match movement direction
+              if (bunnyForward.lengthSq() > 0) {
+                // Define bunny's up direction (radial from planet center)
+                const bunnyUp = characterPosition.clone().normalize();
+                
+                // Ensure bunnyForward is perpendicular to bunnyUp
+                bunnyForward.sub(bunnyUp.clone().multiplyScalar(bunnyForward.dot(bunnyUp))).normalize();
+                
+                // Calculate right vector for proper orientation
+                const bunnyRight = new Vector3().crossVectors(bunnyForward, bunnyUp).normalize();
+                
+                // Recalculate forward to ensure orthogonality
+                bunnyForward.crossVectors(bunnyUp, bunnyRight).normalize();
+                
+                // Create rotation matrix with negation since model faces +Z
+                const rotMatrix = new THREE.Matrix4().makeBasis(
+                  bunnyRight,
+                  bunnyUp,
+                  bunnyForward.clone().negate()
+                );
+                const targetRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+                
+                // Combine with jump tilt
+                const characterUp = characterPosition.clone().normalize();
+                const tiltAxis = new THREE.Vector3().crossVectors(characterUp, new THREE.Vector3(0, 1, 0)).normalize();
+                
+                if (tiltAxis.lengthSq() > 0.01) {
+                  let tiltAngle = 0;
+                  if (jumpProgress < 0.5) {
+                    tiltAngle = Math.PI * 0.15 * (jumpProgress * 2);
+                  } else {
+                    tiltAngle = Math.PI * 0.15 * (2 - jumpProgress * 2);
+                  }
+                  
+                  const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(tiltAxis, tiltAngle);
+                  targetRotation.multiply(tiltQuaternion);
+                }
+                
+                // Apply smoothed rotation
+                character.quaternion.slerp(targetRotation, 0.15);
+              }
+            }
+          }
+          
+          // Apply jump offset to character position
+          if (character) {
+            // Add the jump offset to make character jump away from planet
+            character.position.copy(characterPosition.clone().add(offset));
+            
+            // If not moving, apply default jump rotation
+            if (moveDirection.lengthSq() === 0) {
+              // Get the character's up vector (direction from planet center to character)
+              const characterUp = characterPosition.clone().normalize();
               
-              // Combine the character's base rotation with the tilt
-              const jumpRotation = initialRotation.clone();
-              jumpRotation.multiply(tiltQuaternion);
+              // Create a rotation for the forward tilt while maintaining proper up direction
+              const tiltAxis = new THREE.Vector3().crossVectors(characterUp, new THREE.Vector3(0, 1, 0)).normalize();
               
-              // Apply the combined rotation
-              character.quaternion.copy(jumpRotation);
+              if (tiltAxis.lengthSq() > 0.01) {  // Ensure we have a valid rotation axis
+                // Calculate tilt angle based on jump progress
+                let tiltAngle = 0;
+                
+                if (jumpProgress < 0.5) {
+                  // Forward tilt for ascent (0 to max)
+                  tiltAngle = Math.PI * 0.15 * (jumpProgress * 2);
+                } else {
+                  // Backward tilt for descent (max to 0)
+                  tiltAngle = Math.PI * 0.15 * (2 - jumpProgress * 2);
+                }
+                
+                // Create a quaternion for the tilt
+                const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(tiltAxis, tiltAngle);
+                
+                // Combine the character's base rotation with the tilt
+                const jumpRotation = initialRotation.clone();
+                jumpRotation.multiply(tiltQuaternion);
+                
+                // Apply the combined rotation
+                character.quaternion.copy(jumpRotation);
+              }
             }
           }
           
