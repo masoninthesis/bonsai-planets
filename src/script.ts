@@ -83,7 +83,10 @@ scene.add(ambientLight);
 let character: THREE.Object3D | null = null;
 let characterPosition = new Vector3(0, 1.1, 0); // Position character on top of planet (y-axis)
 let isJumping = false;
+// Movement direction (Updated by keydown/keyup events)
 let moveDirection = new Vector3(0, 0, 0);
+// Last non-zero movement direction (stores the last direction the character was moving)
+const lastMoveDirection = new Vector3(0, 0, 1); // Default forward
 const BASE_MOVE_SPEED = 0.02; // Base movement speed
 const MIN_MOVE_SPEED = 0.0005; // Ultra-slow movement speed for extreme close-ups
 let MOVE_SPEED = BASE_MOVE_SPEED; // Dynamic movement speed
@@ -278,16 +281,56 @@ function updateCharacter() {
       }
     }
   } else {
-    // If no movement, maintain current rotation but ensure up alignment
+    // If no movement, use last direction for orientation but ensure up alignment
     const bunnyUp = characterPosition.clone().normalize();
-    const currentForward = new Vector3(0, 0, 1).applyQuaternion(characterRotation);
-    currentForward.sub(bunnyUp.clone().multiplyScalar(currentForward.dot(bunnyUp))).normalize();
-    const bunnyRight = new Vector3().crossVectors(currentForward, bunnyUp).normalize();
-    currentForward.crossVectors(bunnyUp, bunnyRight).normalize();
     
-    const rotMatrix = new THREE.Matrix4().makeBasis(bunnyRight, bunnyUp, currentForward.negate());
-    const idleRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
-    characterRotation.slerp(idleRotation, 0.05);
+    // Use lastMoveDirection to determine the forward direction 
+    // when no movement keys are pressed
+    let bunnyForward = new Vector3();
+    
+    // Get camera-relative directions for converting lastMoveDirection
+    const cameraForward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    cameraForward.y = 0;
+    cameraForward.normalize();
+    
+    const cameraRight = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    cameraRight.y = 0;
+    cameraRight.normalize();
+    
+    // Convert lastMoveDirection to world space
+    if (lastMoveDirection.z > 0) {
+      bunnyForward.copy(cameraForward.clone().negate());
+    } else if (lastMoveDirection.z < 0) {
+      bunnyForward.copy(cameraForward);
+    }
+    
+    if (lastMoveDirection.x < 0) {
+      bunnyForward.copy(cameraRight);
+    } else if (lastMoveDirection.x > 0) {
+      bunnyForward.copy(cameraRight).negate();
+    }
+    
+    // Ensure bunnyForward is non-zero
+    if (bunnyForward.lengthSq() < 0.01) {
+      // Use current orientation as fallback
+      bunnyForward = new Vector3(0, 0, 1).applyQuaternion(characterRotation);
+    }
+    
+    // Ensure bunnyForward is perpendicular to bunnyUp
+    bunnyForward.sub(bunnyUp.clone().multiplyScalar(bunnyForward.dot(bunnyUp))).normalize();
+    
+    // Calculate right vector for proper orientation
+    const bunnyRight = new Vector3().crossVectors(bunnyForward, bunnyUp).normalize();
+    
+    // Recalculate forward to ensure orthogonality
+    bunnyForward.crossVectors(bunnyUp, bunnyRight).normalize();
+    
+    // Create rotation matrix
+    const rotMatrix = new THREE.Matrix4().makeBasis(bunnyRight, bunnyUp, bunnyForward.negate());
+    const targetRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+    
+    // Smoothly interpolate rotation (using very small factor to maintain current orientation)
+    characterRotation.slerp(targetRotation, 0.05);
   }
   
   // Update character position and rotation
@@ -304,18 +347,26 @@ document.addEventListener("keydown", (event) => {
     case "ArrowUp":
     case "w":
       moveDirection.z = 1;
+      // Save last direction when key is pressed
+      lastMoveDirection.set(0, 0, 1);
       break;
     case "ArrowDown":
     case "s":
       moveDirection.z = -1;
+      // Save last direction when key is pressed
+      lastMoveDirection.set(0, 0, -1);
       break;
     case "ArrowLeft":
     case "a":
       moveDirection.x = -1;
+      // Save last direction when key is pressed
+      lastMoveDirection.set(-1, 0, 0);
       break;
     case "ArrowRight":
     case "d":
       moveDirection.x = 1;
+      // Save last direction when key is pressed
+      lastMoveDirection.set(1, 0, 0);
       break;
     case " ":
       // Jump effect - make the bunny jump away from planet center
@@ -456,8 +507,46 @@ document.addEventListener("keydown", (event) => {
               // Get the character's up vector (direction from planet center to character)
               const characterUp = characterPosition.clone().normalize();
               
-              // Create a rotation for the forward tilt while maintaining proper up direction
-              const tiltAxis = new THREE.Vector3().crossVectors(characterUp, new THREE.Vector3(0, 1, 0)).normalize();
+              // Get camera-relative directions for orientation
+              const cameraForward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+              cameraForward.y = 0;
+              cameraForward.normalize();
+              
+              const cameraRight = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+              cameraRight.y = 0;
+              cameraRight.normalize();
+              
+              // Use lastMoveDirection for orientation
+              let bunnyForward = new Vector3();
+              
+              // Convert lastMoveDirection to world space
+              if (lastMoveDirection.z > 0) {
+                bunnyForward.copy(cameraForward.clone().negate());
+              } else if (lastMoveDirection.z < 0) {
+                bunnyForward.copy(cameraForward);
+              }
+              
+              if (lastMoveDirection.x < 0) {
+                bunnyForward.copy(cameraRight);
+              } else if (lastMoveDirection.x > 0) {
+                bunnyForward.copy(cameraRight).negate();
+              }
+              
+              // Ensure bunnyForward is non-zero
+              if (bunnyForward.lengthSq() < 0.01) {
+                // Use current orientation as fallback
+                bunnyForward = new Vector3(0, 0, 1).applyQuaternion(initialRotation);
+              }
+              
+              // Ensure bunnyForward is perpendicular to bunnyUp
+              bunnyForward.sub(characterUp.clone().multiplyScalar(bunnyForward.dot(characterUp))).normalize();
+              
+              // Create proper orientation with tilt
+              const bunnyRight = new Vector3().crossVectors(bunnyForward, characterUp).normalize();
+              bunnyForward.crossVectors(characterUp, bunnyRight).normalize();
+              
+              // Create a rotation for the tilt while maintaining proper direction
+              const tiltAxis = new Vector3().crossVectors(characterUp, bunnyForward).normalize();
               
               if (tiltAxis.lengthSq() > 0.01) {  // Ensure we have a valid rotation axis
                 // Calculate tilt angle based on jump progress
@@ -471,15 +560,22 @@ document.addEventListener("keydown", (event) => {
                   tiltAngle = Math.PI * 0.15 * (2 - jumpProgress * 2);
                 }
                 
-                // Create a quaternion for the tilt
+                // Create rotation matrix and quaternion for proper orientation
+                const rotMatrix = new THREE.Matrix4().makeBasis(
+                  bunnyRight,
+                  characterUp,
+                  bunnyForward.clone().negate()
+                );
+                const directionRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+                
+                // Create tilt quaternion
                 const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(tiltAxis, tiltAngle);
                 
-                // Combine the character's base rotation with the tilt
-                const jumpRotation = initialRotation.clone();
-                jumpRotation.multiply(tiltQuaternion);
+                // Combine direction and tilt
+                directionRotation.multiply(tiltQuaternion);
                 
                 // Apply the combined rotation
-                character.quaternion.copy(jumpRotation);
+                character.quaternion.copy(directionRotation);
               }
             }
           }
