@@ -4,7 +4,7 @@ import { Planet } from "./worlds/planet";
 import { Stars } from "./worlds/stars";
 import { planetPresets } from "./worlds/presets";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { Mesh } from "three";
+import { Mesh, Vector3 } from "three";
 
 const presets = ["beach", "forest", "snowForest"];
 
@@ -18,7 +18,8 @@ if (!canvas) {
 }
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, width / height, 0.01, 30);
-camera.position.set(0, 0, 2.5);
+camera.position.set(0, 3, 0); // Position camera above for top-down view
+camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
 
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
@@ -30,6 +31,15 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
 
 const _ = new OrbitControls(camera, renderer.domElement);
+_.enablePan = false;
+_.minDistance = 0.5;
+_.maxDistance = 5;
+_.enableDamping = true;
+_.dampingFactor = 0.1;
+// Disable orbit controls rotation
+_.enableRotate = false;
+_.enabled = true;
+_.zoomSpeed = 0.5;
 
 let hasPlanet = false;
 
@@ -61,10 +71,19 @@ light.shadow.camera.left = -2;
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
 scene.add(ambientLight);
 
+// Character variables
+let character: THREE.Object3D | null = null;
+let characterPosition = new Vector3(0, 1.1, 0); // Position character on top of planet (y-axis)
+let isJumping = false;
+let moveDirection = new Vector3(0, 0, 0);
+const MOVE_SPEED = 0.02; // Movement speed
+let characterRotation = new THREE.Quaternion();
+
 let total = 0;
 let lastDelta = 0;
 
-let rotate = true;
+// Disable auto-rotation by default
+let rotate = false;
 
 renderer.setAnimationLoop((delta) => {
   renderer.render(scene, camera);
@@ -75,6 +94,11 @@ renderer.setAnimationLoop((delta) => {
     total += delta - lastDelta;
   }
   lastDelta = delta;
+
+  // Update character position if it exists
+  if (character && planetMesh) {
+    updateCharacter();
+  }
 
   // Animate water level with a subtle sine wave
   if (planetMesh && planetMesh.children.length > 0) {
@@ -96,26 +120,125 @@ renderer.setAnimationLoop((delta) => {
     createPlanet("beach");
     hasPlanet = true;
   }
+  
+  // Ensure camera stays in position looking down at the planet
+  camera.position.set(0, 3, 0);
+  camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
+  camera.lookAt(new Vector3(0, 0, 0));
+});
+
+// Function to update character position and camera
+function updateCharacter() {
+  if (!character || !planetMesh) return;
+  
+  // Keep character fixed at the center position on top of planet (y-axis)
+  characterPosition = new Vector3(0, 1.1, 0);
+  
+  // Apply movement by rotating the planet underneath the character
+  if (moveDirection.lengthSq() > 0) {
+    // Calculate rotation axis and angle based on input
+    let rotationAxis = new Vector3();
+    
+    if (moveDirection.x !== 0) {
+      // Left/right movement rotates around the y axis
+      rotationAxis.add(new Vector3(0, 1, 0).multiplyScalar(-moveDirection.x));
+    }
+    if (moveDirection.z !== 0) {
+      // Forward/backward movement rotates around the x axis
+      rotationAxis.add(new Vector3(1, 0, 0).multiplyScalar(moveDirection.z));
+    }
+    
+    // Normalize rotation axis and apply rotation to planet
+    if (rotationAxis.lengthSq() > 0) {
+      rotationAxis.normalize();
+      const rotationAngle = MOVE_SPEED;
+      planetMesh.rotateOnWorldAxis(rotationAxis, rotationAngle);
+      
+      // Calculate rotation for ball rolling effect
+      const rollAxis = new Vector3(1, 0, 0).cross(rotationAxis).normalize();
+      const rollAngle = rotationAngle * 10;
+      const deltaRotation = new THREE.Quaternion().setFromAxisAngle(rollAxis, rollAngle);
+      characterRotation.premultiply(deltaRotation);
+    }
+  }
+  
+  // Update character position and rotation
+  character.position.copy(characterPosition);
+  character.quaternion.copy(characterRotation);
+}
+
+// Add keyboard controls
+document.addEventListener("keydown", (event) => {
+  switch (event.key) {
+    case "ArrowUp":
+    case "w":
+      moveDirection.z = 1;
+      break;
+    case "ArrowDown":
+    case "s":
+      moveDirection.z = -1;
+      break;
+    case "ArrowLeft":
+    case "a":
+      moveDirection.x = -1;
+      break;
+    case "ArrowRight":
+    case "d":
+      moveDirection.x = 1;
+      break;
+    case " ":
+      // Jump effect - make the planet smaller briefly
+      if (!isJumping) {
+        isJumping = true;
+        const originalScale = planetMesh.scale.clone();
+        // Shrink the planet
+        planetMesh.scale.multiplyScalar(0.9);
+        // Return to original size after a delay
+        setTimeout(() => {
+          planetMesh.scale.copy(originalScale);
+          isJumping = false;
+        }, 300);
+      }
+      break;
+    case "r":
+      rotate = !rotate;
+      break;
+    case "1":
+      createPlanet("beach");
+      break;
+    case "2":
+      createPlanet("forest");
+      break;
+    case "3":
+      createPlanet("snowForest");
+      break;
+  }
+});
+
+document.addEventListener("keyup", (event) => {
+  switch (event.key) {
+    case "ArrowUp":
+    case "w":
+      if (moveDirection.z > 0) moveDirection.z = 0;
+      break;
+    case "ArrowDown":
+    case "s":
+      if (moveDirection.z < 0) moveDirection.z = 0;
+      break;
+    case "ArrowLeft":
+    case "a":
+      if (moveDirection.x < 0) moveDirection.x = 0;
+      break;
+    case "ArrowRight":
+    case "d":
+      if (moveDirection.x > 0) moveDirection.x = 0;
+      break;
+  }
 });
 
 let stars = new Stars();
 
 scene.add(stars);
-
-// add keydown event listener
-document.addEventListener("keydown", (event) => {
-  if (event.key === "1") {
-    createPlanet("beach");
-  } else if (event.key === "2") {
-    createPlanet("forest");
-  } else if (event.key === "3") {
-    createPlanet("snowForest");
-  }
-
-  if (event.key === " ") {
-    rotate = !rotate;
-  }
-});
 
 // button press
 let button = document.getElementById("button");
@@ -157,11 +280,53 @@ if (randomButton) {
   });
 }
 
+// Function to create a character
+async function createCharacter() {
+  if (character) {
+    scene.remove(character);
+  }
+  
+  try {
+    // Create a simple ball character
+    const geometry = new THREE.SphereGeometry(0.05, 32, 32);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: 0x3366ff,
+      roughness: 0.4,
+      metalness: 0.3
+    });
+    character = new THREE.Mesh(geometry, material);
+    
+    // Position character on top of the planet
+    characterPosition = new Vector3(0, 1.1, 0);
+    character.position.copy(characterPosition);
+    
+    // Reset character rotation and velocity
+    characterRotation = new THREE.Quaternion();
+    moveDirection = new Vector3(0, 0, 0);
+    isJumping = false;
+    
+    // Add character to the scene
+    scene.add(character);
+    
+    // Set camera position to view the planet and character
+    camera.position.set(0, 3, 0);
+    camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
+    camera.lookAt(new Vector3(0, 0, 0));
+    
+    console.log("Ball character created and added to scene");
+  } catch (error) {
+    console.error("Error creating character:", error);
+  }
+}
+
 async function createPlanet(preset: string | undefined = undefined) {
   if (!preset) {
     preset = presets[Math.floor(Math.random() * presets.length)];
   }
 
+  // Save character state
+  const hadCharacter = character !== null;
+  
   console.log("Creating planet with preset:", preset);
   console.time("planet");
   const planet = new Planet({
@@ -176,29 +341,34 @@ async function createPlanet(preset: string | undefined = undefined) {
     scene.add(mesh);
     planetMesh = mesh;
     
+    // Center the planet at the origin
+    planetMesh.position.set(0, 0, 0);
+    
+    // Create character or restore it
+    if (!hadCharacter) {
+      createCharacter();
+    } else {
+      // Reset character position on top of planet
+      characterPosition = new Vector3(0, 1.1, 0);
+      if (character) {
+        character.position.copy(characterPosition);
+        // Reset character rotation
+        characterRotation = new THREE.Quaternion();
+        moveDirection = new Vector3(0, 0, 0);
+        isJumping = false;
+      }
+      
+      // Set camera position to view the planet and character
+      camera.position.set(0, 3, 0);
+      camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
+      camera.lookAt(new Vector3(0, 0, 0));
+    }
+    
     // Manually add models to the planet if needed
     if (mesh.children.length < 3) { // Only ocean and atmosphere
       console.log("No vegetation detected, manually adding models");
       await planet.addManualModels(mesh);
     }
-    
-    // Directly add a model to the scene as a test
-    const loader = new GLTFLoader();
-    loader.load(
-      "/lowpoly_nature/PineTree_1.gltf",
-      (gltf) => {
-        console.log("Loaded test model");
-        const model = gltf.scene;
-        model.scale.set(0.025, 0.025, 0.025);
-        model.position.set(0, 1.5, 0);
-        scene.add(model);
-        console.log("Added test model to scene");
-      },
-      undefined,
-      (error) => {
-        console.error("Error loading test model:", error);
-      }
-    );
     
     console.timeEnd("planet");
   } catch (error) {

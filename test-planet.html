@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Planet with Low Poly Nature Models</title>
+  <title>Test Planet with Rolling Ball</title>
   <style>
     body {
       margin: 0;
@@ -22,6 +22,7 @@
       font-family: Arial, sans-serif;
       padding: 10px;
       background-color: rgba(0,0,0,0.5);
+      border-radius: 5px;
     }
     button {
       margin: 5px;
@@ -35,6 +36,17 @@
     button:hover {
       background-color: #45a049;
     }
+    #instructions {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      color: white;
+      font-family: Arial, sans-serif;
+      padding: 10px;
+      background-color: rgba(0,0,0,0.5);
+      border-radius: 5px;
+      max-width: 300px;
+    }
   </style>
 </head>
 <body>
@@ -45,8 +57,14 @@
     <button id="forest">Forest Planet</button>
     <button id="snow">Snow Forest Planet</button>
     <button id="random">Random Planet</button>
-    <p>Space: Toggle rotation</p>
-    <p>Mouse: Drag to rotate, scroll to zoom</p>
+  </div>
+  <div id="instructions">
+    <h3>Ball Controls</h3>
+    <p>WASD or Arrow Keys: Rotate the planet</p>
+    <p>Space: Jump (planet shrinks briefly)</p>
+    <p>Mouse Wheel: Zoom in/out</p>
+    <p>R: Toggle planet auto-rotation</p>
+    <p>1, 2, 3: Switch planet type</p>
   </div>
   <script type="module" src="/src/script.ts"></script>
 </body>
