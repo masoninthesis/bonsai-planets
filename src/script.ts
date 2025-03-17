@@ -4,6 +4,7 @@ import { Planet } from "./worlds/planet";
 import { Stars } from "./worlds/stars";
 import { planetPresets } from "./worlds/presets";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { Mesh } from "three";
 
 const presets = ["beach", "forest", "snowForest"];
 
@@ -64,6 +65,7 @@ let total = 0;
 let lastDelta = 0;
 
 let rotate = true;
+
 renderer.setAnimationLoop((delta) => {
   renderer.render(scene, camera);
 
@@ -73,6 +75,21 @@ renderer.setAnimationLoop((delta) => {
     total += delta - lastDelta;
   }
   lastDelta = delta;
+
+  // Animate water level with a subtle sine wave
+  if (planetMesh && planetMesh.children.length > 0) {
+    // First child is the ocean mesh
+    const oceanMesh = planetMesh.children[0] as Mesh;
+    if (oceanMesh.morphTargetInfluences && oceanMesh.morphTargetInfluences.length > 0) {
+      // Animate the morph target influence with a sine wave (more subtle)
+      oceanMesh.morphTargetInfluences[0] = Math.sin(total * 0.0003) * 0.3 + 0.3;
+    }
+    
+    // Update caustics material if it exists
+    if (oceanMesh.material && (oceanMesh.material as any).update) {
+      (oceanMesh.material as any).update();
+    }
+  }
 
   if (!hasPlanet) {
     console.log("Creating planet");
