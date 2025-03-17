@@ -332,6 +332,9 @@ document.addEventListener("keydown", (event) => {
         const jumpDirection = characterPosition.clone().normalize();
         const jumpDistance = 0.2 * (currentSize / BASE_CHARACTER_SIZE); // Increased jump height for bunny
         
+        // Store initial character rotation
+        const initialRotation = character ? character.quaternion.clone() : new THREE.Quaternion();
+        
         // Animation loop for the jump
         let jumpTime = 0;
         const jumpDuration = 400; // Longer jump duration for bunny
@@ -347,18 +350,37 @@ document.addEventListener("keydown", (event) => {
           
           // Apply offset to character position
           if (character) {
-            // Store the actual position before adding jump offset
-            const basePosition = characterPosition.clone().sub(offset);
-            character.position.copy(basePosition.clone().add(offset));
+            // Directly add the jump offset to the base characterPosition
+            // This will move the character away from the planet
+            character.position.copy(characterPosition.clone().add(offset));
             
-            // Add a slight forward tilt during the first half of the jump
-            // and backward tilt during the second half
-            if (jumpProgress < 0.5) {
-              // Forward tilt (nose down)
-              character.rotation.x = -Math.PI * 0.1 * (jumpProgress * 2);
-            } else {
-              // Backward tilt (nose up)
-              character.rotation.x = -Math.PI * 0.1 * (2 - jumpProgress * 2);
+            // Get the character's up vector (direction from planet center to character)
+            const characterUp = characterPosition.clone().normalize();
+            
+            // Create a rotation for the forward tilt while maintaining proper up direction
+            const tiltAxis = new THREE.Vector3().crossVectors(characterUp, new THREE.Vector3(0, 1, 0)).normalize();
+            
+            if (tiltAxis.lengthSq() > 0.01) {  // Ensure we have a valid rotation axis
+              // Calculate tilt angle based on jump progress
+              let tiltAngle = 0;
+              
+              if (jumpProgress < 0.5) {
+                // Forward tilt for ascent (0 to max)
+                tiltAngle = Math.PI * 0.15 * (jumpProgress * 2);
+              } else {
+                // Backward tilt for descent (max to 0)
+                tiltAngle = Math.PI * 0.15 * (2 - jumpProgress * 2);
+              }
+              
+              // Create a quaternion for the tilt
+              const tiltQuaternion = new THREE.Quaternion().setFromAxisAngle(tiltAxis, tiltAngle);
+              
+              // Combine the character's base rotation with the tilt
+              const jumpRotation = initialRotation.clone();
+              jumpRotation.multiply(tiltQuaternion);
+              
+              // Apply the combined rotation
+              character.quaternion.copy(jumpRotation);
             }
           }
           
@@ -366,9 +388,10 @@ document.addEventListener("keydown", (event) => {
             clearInterval(jumpInterval);
             isJumping = false;
             
-            // Reset rotation
+            // Restore original rotation
             if (character) {
-              character.rotation.x = 0;
+              // Smoothly return to the pre-jump rotation using characterRotation (which is updated in updateCharacter)
+              character.quaternion.copy(characterRotation);
             }
           }
         }, 16);
