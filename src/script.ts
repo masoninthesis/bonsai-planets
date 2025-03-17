@@ -168,7 +168,6 @@ function updateCharacter() {
   let zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
   
   // Apply non-linear scaling for smoother transitions at extreme zoom levels
-  // This creates a more gradual change when zoomed in very close
   zoomFactor = Math.pow(zoomFactor, 0.7);
   
   // Update movement speed - slower when zoomed in
@@ -201,8 +200,8 @@ function updateCharacter() {
     // Get the collision point and adjust character position
     const hitPoint = intersects[0].point;
     
-    // Set character position to sit on terrain (adding small offset for the ball radius)
-    characterPosition = hitPoint.clone().normalize().multiplyScalar(hitPoint.length() + newSize);
+    // Set character position to sit on terrain (adding small offset for the bunny height)
+    characterPosition = hitPoint.clone().normalize().multiplyScalar(hitPoint.length() + newSize * 0.5);
   } else {
     // Safety fallback: if no terrain found, keep previous position
     characterPosition = previousPosition;
@@ -250,14 +249,33 @@ function updateCharacter() {
       
       if (recastHits.length > 0 && recastHits[0].distance < 3) {
         const newHitPoint = recastHits[0].point;
-        characterPosition = newHitPoint.clone().normalize().multiplyScalar(newHitPoint.length() + newSize);
+        characterPosition = newHitPoint.clone().normalize().multiplyScalar(newHitPoint.length() + newSize * 0.5);
       }
       
-      // Calculate rotation for ball rolling effect
-      const rollAxis = rotationAxis.clone().cross(new Vector3(0, 1, 0)).normalize();
-      const rollAngle = rotationAngle * 10;
-      const deltaRotation = new THREE.Quaternion().setFromAxisAngle(rollAxis, rollAngle);
-      characterRotation.premultiply(deltaRotation);
+      // Orient the bunny in the direction of movement
+      if (character) {
+        // Get the direction of movement in world space
+        const movementDirection = rotationAxis.clone().cross(characterPosition.clone().normalize());
+        
+        // Create a quaternion that orients the bunny to face the movement direction
+        const lookDirection = movementDirection.clone().normalize();
+        const characterUp = characterPosition.clone().normalize();
+        
+        // Create a coordinate system for the bunny
+        const forward = lookDirection;
+        const up = characterUp;
+        const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+        
+        // Recalculate forward to ensure orthogonality
+        forward.crossVectors(up, right).normalize();
+        
+        // Create rotation matrix and extract quaternion
+        const rotMatrix = new THREE.Matrix4().makeBasis(right, up, forward);
+        const newRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+        
+        // Apply rotation with smoothing
+        characterRotation.slerp(newRotation, 0.15);
+      }
     }
   }
   
@@ -289,7 +307,7 @@ document.addEventListener("keydown", (event) => {
       moveDirection.x = 1;
       break;
     case " ":
-      // Jump effect - make the character jump away from planet center
+      // Jump effect - make the bunny jump away from planet center
       if (!isJumping) {
         isJumping = true;
         
@@ -301,11 +319,11 @@ document.addEventListener("keydown", (event) => {
         
         // Set jump velocity in the direction away from planet center
         const jumpDirection = characterPosition.clone().normalize();
-        const jumpDistance = 0.15 * (currentSize / BASE_CHARACTER_SIZE); // Scale jump height with character size
+        const jumpDistance = 0.2 * (currentSize / BASE_CHARACTER_SIZE); // Increased jump height for bunny
         
         // Animation loop for the jump
         let jumpTime = 0;
-        const jumpDuration = 300; // in milliseconds
+        const jumpDuration = 400; // Longer jump duration for bunny
         const jumpInterval = setInterval(() => {
           jumpTime += 16; // ~60fps
           
@@ -321,11 +339,26 @@ document.addEventListener("keydown", (event) => {
             // Store the actual position before adding jump offset
             const basePosition = characterPosition.clone().sub(offset);
             character.position.copy(basePosition.clone().add(offset));
+            
+            // Add a slight forward tilt during the first half of the jump
+            // and backward tilt during the second half
+            if (jumpProgress < 0.5) {
+              // Forward tilt (nose down)
+              character.rotation.x = -Math.PI * 0.1 * (jumpProgress * 2);
+            } else {
+              // Backward tilt (nose up)
+              character.rotation.x = -Math.PI * 0.1 * (2 - jumpProgress * 2);
+            }
           }
           
           if (jumpTime >= jumpDuration) {
             clearInterval(jumpInterval);
             isJumping = false;
+            
+            // Reset rotation
+            if (character) {
+              character.rotation.x = 0;
+            }
           }
         }, 16);
       }
@@ -429,23 +462,147 @@ async function createCharacter() {
   }
   
   try {
-    // Create a ball character with more visible materials
-    const geometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE, 32, 32);
+    // Create a low poly bunny character
+    character = new THREE.Group();
     
-    // Create a material that stands out against the planet terrain
-    const material = new THREE.MeshStandardMaterial({ 
-      color: 0xff5522,  // Bright orange color
-      roughness: 0.3,
-      metalness: 0.7,
-      emissive: 0x331100,  // Slight glow
-      emissiveIntensity: 0.2
+    // Create bunny body
+    const bodyGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.8, 8, 6);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xf5f5f5,  // White color
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.set(0, 0, 0);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    character.add(body);
+    
+    // Create bunny head
+    const headGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.6, 8, 6);
+    const headMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xf5f5f5,  // White color
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.set(0, BASE_CHARACTER_SIZE * 0.7, 0);
+    head.scale.set(0.8, 1, 0.8);
+    head.castShadow = true;
+    head.receiveShadow = true;
+    character.add(head);
+    
+    // Create bunny ears
+    const earGeometry = new THREE.ConeGeometry(BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.8, 5);
+    const earMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xf5f5f5,  // White color
+      roughness: 0.7,
+      metalness: 0.1
     });
     
-    character = new THREE.Mesh(geometry, material);
+    // Left ear
+    const leftEar = new THREE.Mesh(earGeometry, earMaterial);
+    leftEar.position.set(-BASE_CHARACTER_SIZE * 0.3, BASE_CHARACTER_SIZE * 1.3, 0);
+    leftEar.rotation.z = Math.PI / 12;
+    leftEar.castShadow = true;
+    leftEar.receiveShadow = true;
+    character.add(leftEar);
     
-    // Enable shadows
-    character.castShadow = true;
-    character.receiveShadow = true;
+    // Right ear
+    const rightEar = new THREE.Mesh(earGeometry, earMaterial);
+    rightEar.position.set(BASE_CHARACTER_SIZE * 0.3, BASE_CHARACTER_SIZE * 1.3, 0);
+    rightEar.rotation.z = -Math.PI / 12;
+    rightEar.castShadow = true;
+    rightEar.receiveShadow = true;
+    character.add(rightEar);
+    
+    // Create bunny tail
+    const tailGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.3, 6, 6);
+    const tailMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xffffff,  // Bright white color
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    const tail = new THREE.Mesh(tailGeometry, tailMaterial);
+    tail.position.set(0, 0, -BASE_CHARACTER_SIZE * 0.8);
+    tail.castShadow = true;
+    tail.receiveShadow = true;
+    character.add(tail);
+    
+    // Create bunny nose
+    const noseGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.1, 6, 6);
+    const noseMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xff9999,  // Pink color
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+    nose.position.set(0, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.5);
+    nose.castShadow = true;
+    nose.receiveShadow = true;
+    character.add(nose);
+    
+    // Create bunny eyes
+    const eyeGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.08, 6, 6);
+    const eyeMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0x000000,  // Black color
+      roughness: 0.5,
+      metalness: 0.2
+    });
+    
+    // Left eye
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.8, BASE_CHARACTER_SIZE * 0.4);
+    leftEye.castShadow = true;
+    leftEye.receiveShadow = true;
+    character.add(leftEye);
+    
+    // Right eye
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.8, BASE_CHARACTER_SIZE * 0.4);
+    rightEye.castShadow = true;
+    rightEye.receiveShadow = true;
+    character.add(rightEye);
+    
+    // Create bunny feet
+    const footGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.25, 6, 6);
+    const footMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xf0f0f0,  // Slightly darker white
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    
+    // Front left foot
+    const frontLeftFoot = new THREE.Mesh(footGeometry, footMaterial);
+    frontLeftFoot.position.set(-BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.3);
+    frontLeftFoot.scale.set(0.8, 0.5, 1.2);
+    frontLeftFoot.castShadow = true;
+    frontLeftFoot.receiveShadow = true;
+    character.add(frontLeftFoot);
+    
+    // Front right foot
+    const frontRightFoot = new THREE.Mesh(footGeometry, footMaterial);
+    frontRightFoot.position.set(BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.3);
+    frontRightFoot.scale.set(0.8, 0.5, 1.2);
+    frontRightFoot.castShadow = true;
+    frontRightFoot.receiveShadow = true;
+    character.add(frontRightFoot);
+    
+    // Back left foot
+    const backLeftFoot = new THREE.Mesh(footGeometry, footMaterial);
+    backLeftFoot.position.set(-BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.3);
+    backLeftFoot.scale.set(0.8, 0.5, 1.2);
+    backLeftFoot.castShadow = true;
+    backLeftFoot.receiveShadow = true;
+    character.add(backLeftFoot);
+    
+    // Back right foot
+    const backRightFoot = new THREE.Mesh(footGeometry, footMaterial);
+    backRightFoot.position.set(BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.3);
+    backRightFoot.scale.set(0.8, 0.5, 1.2);
+    backRightFoot.castShadow = true;
+    backRightFoot.receiveShadow = true;
+    character.add(backRightFoot);
     
     // Position character at the fixed center position initially
     characterPosition = new Vector3(0, 1.1, 0);
@@ -462,7 +619,7 @@ async function createCharacter() {
     // Set orbit controls target to the character
     _.target.copy(characterPosition);
     
-    console.log("Ball character created and added to scene");
+    console.log("Bunny character created and added to scene");
   } catch (error) {
     console.error("Error creating character:", error);
   }
