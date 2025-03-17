@@ -17,7 +17,7 @@ if (!canvas) {
   throw new Error("Canvas not found");
 }
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, width / height, 0.01, 30);
+const camera = new THREE.PerspectiveCamera(70, width / height, 0.001, 30);
 camera.position.set(0, 1.1, 2.5); // Position camera to look at the character
 camera.up.set(0, 1, 0); // Set up vector to y-axis for proper orientation
 
@@ -32,7 +32,7 @@ renderer.shadowMap.enabled = true;
 
 const _ = new OrbitControls(camera, renderer.domElement);
 _.enablePan = false;
-_.minDistance = 0.5;
+_.minDistance = 0.05; // Allow extremely close zoom
 _.maxDistance = 5;
 _.enableDamping = true;
 _.dampingFactor = 0.1;
@@ -85,11 +85,11 @@ let characterPosition = new Vector3(0, 1.1, 0); // Position character on top of 
 let isJumping = false;
 let moveDirection = new Vector3(0, 0, 0);
 const BASE_MOVE_SPEED = 0.02; // Base movement speed
-const MIN_MOVE_SPEED = 0.005; // Minimum movement speed when zoomed in
+const MIN_MOVE_SPEED = 0.0005; // Ultra-slow movement speed for extreme close-ups
 let MOVE_SPEED = BASE_MOVE_SPEED; // Dynamic movement speed
 const BASE_CHARACTER_SIZE = 0.05; // Base character size
 const MAX_CHARACTER_SIZE = 0.1; // 200% size when zoomed out
-const MIN_CHARACTER_SIZE = 0.025; // 50% size when zoomed in
+const MIN_CHARACTER_SIZE = 0.005; // 10% size when zoomed in extremely close
 let characterRotation = new THREE.Quaternion();
 
 let total = 0;
@@ -165,7 +165,11 @@ function updateCharacter() {
   
   // Calculate character speed and size based on camera distance
   const camDistance = camera.position.distanceTo(characterPosition);
-  const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+  let zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+  
+  // Apply non-linear scaling for smoother transitions at extreme zoom levels
+  // This creates a more gradual change when zoomed in very close
+  zoomFactor = Math.pow(zoomFactor, 0.7);
   
   // Update movement speed - slower when zoomed in
   MOVE_SPEED = MIN_MOVE_SPEED + (BASE_MOVE_SPEED - MIN_MOVE_SPEED) * zoomFactor;
@@ -291,7 +295,8 @@ document.addEventListener("keydown", (event) => {
         
         // Calculate current character size for proper jump effect
         const camDistance = camera.position.distanceTo(characterPosition);
-        const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+        let zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+        zoomFactor = Math.pow(zoomFactor, 0.7); // Apply non-linear scaling
         const currentSize = MIN_CHARACTER_SIZE + (MAX_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
         
         // Set jump velocity in the direction away from planet center
@@ -509,7 +514,8 @@ async function createPlanet(preset: string | undefined = undefined) {
       if (character && planetMesh) {
         // Calculate current character size
         const camDistance = camera.position.distanceTo(characterPosition);
-        const zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+        let zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
+        zoomFactor = Math.pow(zoomFactor, 0.7); // Apply non-linear scaling
         const currentSize = MIN_CHARACTER_SIZE + (MAX_CHARACTER_SIZE - MIN_CHARACTER_SIZE) * zoomFactor;
         
         // Cast a ray down from the character to find terrain
