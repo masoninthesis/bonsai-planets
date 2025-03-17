@@ -94,6 +94,7 @@ const BASE_CHARACTER_SIZE = 0.05; // Base character size
 const MAX_CHARACTER_SIZE = 0.1; // 200% size when zoomed out
 const MIN_CHARACTER_SIZE = 0.005; // 10% size when zoomed in extremely close
 let characterRotation = new THREE.Quaternion();
+let animationTime = 0; // For running animation
 
 let total = 0;
 let lastDelta = 0;
@@ -112,6 +113,7 @@ renderer.setAnimationLoop((delta) => {
 
   if (lastDelta > 0) {
     total += delta - lastDelta;
+    animationTime += delta; // Update animation time continuously
   }
   lastDelta = delta;
 
@@ -120,6 +122,7 @@ renderer.setAnimationLoop((delta) => {
     // Only update character if not jumping
     if (!isJumping) {
       updateCharacter();
+      updateRunningAnimation(); // Add running animation
     }
     
     // Debug visualization of terrain detection ray
@@ -588,6 +591,9 @@ document.addEventListener("keydown", (event) => {
             if (character) {
               // Smoothly return to the pre-jump rotation using characterRotation (which is updated in updateCharacter)
               character.quaternion.copy(characterRotation);
+              
+              // Reset any animation poses
+              resetBunnyPose();
             }
           }
         }, 16);
@@ -695,44 +701,48 @@ async function createCharacter() {
     // Create a low poly bunny character
     character = new THREE.Group();
     
-    // Create bunny body
-    const bodyGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.8, 8, 6);
+    // Create bunny body (elongated for bunny shape)
+    const bodyGeometry = new THREE.CylinderGeometry(BASE_CHARACTER_SIZE * 0.5, BASE_CHARACTER_SIZE * 0.6, BASE_CHARACTER_SIZE * 1.2, 8);
     const bodyMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xf5f5f5,  // White color
       roughness: 0.7,
       metalness: 0.1
     });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.name = "body"; // Add name for animation
     body.position.set(0, 0, 0);
+    body.rotation.x = Math.PI / 2; // Rotate to align with forward direction
     body.castShadow = true;
     body.receiveShadow = true;
     character.add(body);
     
-    // Create bunny head
-    const headGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.6, 8, 6);
+    // Create bunny head (slightly flatter)
+    const headGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.5, 8, 6);
     const headMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xf5f5f5,  // White color
       roughness: 0.7,
       metalness: 0.1
     });
     const head = new THREE.Mesh(headGeometry, headMaterial);
-    head.position.set(0, BASE_CHARACTER_SIZE * 0.7, 0);
-    head.scale.set(0.8, 1, 0.8);
+    head.name = "head"; // Add name for animation
+    head.position.set(0, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.6);
+    head.scale.set(0.9, 0.8, 1);
     head.castShadow = true;
     head.receiveShadow = true;
     character.add(head);
     
-    // Create bunny ears
-    const earGeometry = new THREE.ConeGeometry(BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.8, 5);
+    // Create bunny ears (tapered and longer)
+    const earGeometry = new THREE.ConeGeometry(BASE_CHARACTER_SIZE * 0.15, BASE_CHARACTER_SIZE * 1, 5);
     const earMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xf5f5f5,  // White color
+      color: 0xe0e0e0,  // Slightly darker white for contrast
       roughness: 0.7,
       metalness: 0.1
     });
     
     // Left ear
     const leftEar = new THREE.Mesh(earGeometry, earMaterial);
-    leftEar.position.set(-BASE_CHARACTER_SIZE * 0.3, BASE_CHARACTER_SIZE * 1.3, 0);
+    leftEar.name = "leftEar"; // Add name for animation
+    leftEar.position.set(-BASE_CHARACTER_SIZE * 0.25, BASE_CHARACTER_SIZE * 1.2, BASE_CHARACTER_SIZE * 0.6);
     leftEar.rotation.z = Math.PI / 12;
     leftEar.castShadow = true;
     leftEar.receiveShadow = true;
@@ -740,40 +750,43 @@ async function createCharacter() {
     
     // Right ear
     const rightEar = new THREE.Mesh(earGeometry, earMaterial);
-    rightEar.position.set(BASE_CHARACTER_SIZE * 0.3, BASE_CHARACTER_SIZE * 1.3, 0);
+    rightEar.name = "rightEar"; // Add name for animation
+    rightEar.position.set(BASE_CHARACTER_SIZE * 0.25, BASE_CHARACTER_SIZE * 1.2, BASE_CHARACTER_SIZE * 0.6);
     rightEar.rotation.z = -Math.PI / 12;
     rightEar.castShadow = true;
     rightEar.receiveShadow = true;
     character.add(rightEar);
     
-    // Create bunny tail
-    const tailGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.3, 6, 6);
+    // Create bunny tail (smaller and fluffier)
+    const tailGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.2, 6, 6);
     const tailMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xffffff,  // Bright white color
       roughness: 0.7,
       metalness: 0.1
     });
     const tail = new THREE.Mesh(tailGeometry, tailMaterial);
-    tail.position.set(0, 0, -BASE_CHARACTER_SIZE * 0.8);
+    tail.name = "tail"; // Add name for animation
+    tail.position.set(0, BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.6);
     tail.castShadow = true;
     tail.receiveShadow = true;
     character.add(tail);
     
     // Create bunny nose
-    const noseGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.1, 6, 6);
+    const noseGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.08, 6, 6);
     const noseMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xff9999,  // Pink color
       roughness: 0.7,
       metalness: 0.1
     });
     const nose = new THREE.Mesh(noseGeometry, noseMaterial);
-    nose.position.set(0, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.5);
+    nose.name = "nose"; // Add name for animation
+    nose.position.set(0, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.9);
     nose.castShadow = true;
     nose.receiveShadow = true;
     character.add(nose);
     
     // Create bunny eyes
-    const eyeGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.08, 6, 6);
+    const eyeGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.06, 6, 6);
     const eyeMaterial = new THREE.MeshStandardMaterial({ 
       color: 0x000000,  // Black color
       roughness: 0.5,
@@ -782,20 +795,59 @@ async function createCharacter() {
     
     // Left eye
     const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    leftEye.position.set(-BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.8, BASE_CHARACTER_SIZE * 0.4);
+    leftEye.name = "leftEye"; // Add name for animation
+    leftEye.position.set(-BASE_CHARACTER_SIZE * 0.15, BASE_CHARACTER_SIZE * 0.8, BASE_CHARACTER_SIZE * 0.85);
     leftEye.castShadow = true;
     leftEye.receiveShadow = true;
     character.add(leftEye);
     
     // Right eye
     const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    rightEye.position.set(BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.8, BASE_CHARACTER_SIZE * 0.4);
+    rightEye.name = "rightEye"; // Add name for animation
+    rightEye.position.set(BASE_CHARACTER_SIZE * 0.15, BASE_CHARACTER_SIZE * 0.8, BASE_CHARACTER_SIZE * 0.85);
     rightEye.castShadow = true;
     rightEye.receiveShadow = true;
     character.add(rightEye);
     
-    // Create bunny feet
-    const footGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.25, 6, 6);
+    // Add whiskers (simple lines)
+    const whiskerMaterial = new THREE.LineBasicMaterial({ color: 0xaaaaaa });
+    
+    // Left whiskers
+    const leftWhisker1Geometry = new THREE.BufferGeometry().setFromPoints([
+      new Vector3(-BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.9),
+      new Vector3(-BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.65, BASE_CHARACTER_SIZE * 0.9)
+    ]);
+    const leftWhisker1 = new THREE.Line(leftWhisker1Geometry, whiskerMaterial);
+    leftWhisker1.name = "leftWhisker1"; // Add name for animation
+    character.add(leftWhisker1);
+    
+    const leftWhisker2Geometry = new THREE.BufferGeometry().setFromPoints([
+      new Vector3(-BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.9),
+      new Vector3(-BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.75, BASE_CHARACTER_SIZE * 0.9)
+    ]);
+    const leftWhisker2 = new THREE.Line(leftWhisker2Geometry, whiskerMaterial);
+    leftWhisker2.name = "leftWhisker2"; // Add name for animation
+    character.add(leftWhisker2);
+    
+    // Right whiskers
+    const rightWhisker1Geometry = new THREE.BufferGeometry().setFromPoints([
+      new Vector3(BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.9),
+      new Vector3(BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.65, BASE_CHARACTER_SIZE * 0.9)
+    ]);
+    const rightWhisker1 = new THREE.Line(rightWhisker1Geometry, whiskerMaterial);
+    rightWhisker1.name = "rightWhisker1"; // Add name for animation
+    character.add(rightWhisker1);
+    
+    const rightWhisker2Geometry = new THREE.BufferGeometry().setFromPoints([
+      new Vector3(BASE_CHARACTER_SIZE * 0.2, BASE_CHARACTER_SIZE * 0.7, BASE_CHARACTER_SIZE * 0.9),
+      new Vector3(BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.75, BASE_CHARACTER_SIZE * 0.9)
+    ]);
+    const rightWhisker2 = new THREE.Line(rightWhisker2Geometry, whiskerMaterial);
+    rightWhisker2.name = "rightWhisker2"; // Add name for animation
+    character.add(rightWhisker2);
+    
+    // Create bunny feet (more defined)
+    const footGeometry = new THREE.SphereGeometry(BASE_CHARACTER_SIZE * 0.2, 6, 6);
     const footMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xf0f0f0,  // Slightly darker white
       roughness: 0.7,
@@ -804,32 +856,36 @@ async function createCharacter() {
     
     // Front left foot
     const frontLeftFoot = new THREE.Mesh(footGeometry, footMaterial);
-    frontLeftFoot.position.set(-BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.3);
-    frontLeftFoot.scale.set(0.8, 0.5, 1.2);
+    frontLeftFoot.name = "frontLeftFoot"; // Add name for animation
+    frontLeftFoot.position.set(-BASE_CHARACTER_SIZE * 0.3, -BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.4);
+    frontLeftFoot.scale.set(0.8, 0.6, 1.2);
     frontLeftFoot.castShadow = true;
     frontLeftFoot.receiveShadow = true;
     character.add(frontLeftFoot);
     
     // Front right foot
     const frontRightFoot = new THREE.Mesh(footGeometry, footMaterial);
-    frontRightFoot.position.set(BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.3);
-    frontRightFoot.scale.set(0.8, 0.5, 1.2);
+    frontRightFoot.name = "frontRightFoot"; // Add name for animation
+    frontRightFoot.position.set(BASE_CHARACTER_SIZE * 0.3, -BASE_CHARACTER_SIZE * 0.4, BASE_CHARACTER_SIZE * 0.4);
+    frontRightFoot.scale.set(0.8, 0.6, 1.2);
     frontRightFoot.castShadow = true;
     frontRightFoot.receiveShadow = true;
     character.add(frontRightFoot);
     
     // Back left foot
     const backLeftFoot = new THREE.Mesh(footGeometry, footMaterial);
-    backLeftFoot.position.set(-BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.3);
-    backLeftFoot.scale.set(0.8, 0.5, 1.2);
+    backLeftFoot.name = "backLeftFoot"; // Add name for animation
+    backLeftFoot.position.set(-BASE_CHARACTER_SIZE * 0.3, -BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4);
+    backLeftFoot.scale.set(0.8, 0.6, 1.2);
     backLeftFoot.castShadow = true;
     backLeftFoot.receiveShadow = true;
     character.add(backLeftFoot);
     
     // Back right foot
     const backRightFoot = new THREE.Mesh(footGeometry, footMaterial);
-    backRightFoot.position.set(BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.3);
-    backRightFoot.scale.set(0.8, 0.5, 1.2);
+    backRightFoot.name = "backRightFoot"; // Add name for animation
+    backRightFoot.position.set(BASE_CHARACTER_SIZE * 0.3, -BASE_CHARACTER_SIZE * 0.4, -BASE_CHARACTER_SIZE * 0.4);
+    backRightFoot.scale.set(0.8, 0.6, 1.2);
     backRightFoot.castShadow = true;
     backRightFoot.receiveShadow = true;
     character.add(backRightFoot);
@@ -849,7 +905,7 @@ async function createCharacter() {
     // Set orbit controls target to the character
     _.target.copy(characterPosition);
     
-    console.log("Bunny character created and added to scene");
+    console.log("Improved bunny character created and added to scene");
   } catch (error) {
     console.error("Error creating character:", error);
   }
@@ -959,3 +1015,122 @@ function updateSize() {
 
 updateSize();
 window.addEventListener("resize", updateSize);
+
+// Function to update the running animation
+function updateRunningAnimation() {
+  if (!character || isJumping || moveDirection.lengthSq() === 0) {
+    // Reset animation when not moving
+    resetBunnyPose();
+    return;
+  }
+
+  const speedFactor = MOVE_SPEED / BASE_MOVE_SPEED; // Scale animation speed with movement
+  const cycleTime = animationTime * speedFactor * 2; // Slower cycle for gentler hop (reduced from 5)
+
+  // Access bunny parts
+  const body = character.getObjectByName("body");
+  const head = character.getObjectByName("head");
+  const leftEar = character.getObjectByName("leftEar");
+  const rightEar = character.getObjectByName("rightEar");
+  const frontLeftFoot = character.getObjectByName("frontLeftFoot");
+  const frontRightFoot = character.getObjectByName("frontRightFoot");
+  const backLeftFoot = character.getObjectByName("backLeftFoot");
+  const backRightFoot = character.getObjectByName("backRightFoot");
+
+  if (!body || !head || !leftEar || !rightEar || !frontLeftFoot || !frontRightFoot || !backLeftFoot || !backRightFoot) {
+    return; // Skip if any part is missing
+  }
+
+  // Calculate hop cycle with smoother easing curve for gentler motion
+  // Use a modified sine wave that's smoother at the bottom and more gentle at the top
+  const rawHopCycle = Math.sin(cycleTime);
+  
+  // Apply cubic easing to create a more gentle hop
+  // This smooths the transitions at the bottom of the hop
+  const hopCycle = rawHopCycle > 0 ? Math.pow(rawHopCycle, 2) : 0;
+  
+  // Reduce hop height for subtler motion (reduced from 0.07 to 0.04)
+  const hopHeight = hopCycle * 0.04 * BASE_CHARACTER_SIZE;
+  
+  // Add hop offset to character's position - lifting entire character during hop
+  if (character && characterPosition) {
+    const upDirection = characterPosition.clone().normalize();
+    const characterHopOffset = upDirection.multiplyScalar(hopHeight);
+    character.position.copy(characterPosition.clone().add(characterHopOffset));
+  }
+
+  // Body bounce and tilt with gentler amplitude
+  const bounce = hopCycle * 0.02 * BASE_CHARACTER_SIZE; // Reduced amplitude
+  body.position.y = bounce;
+  body.rotation.x = Math.PI / 2 + Math.sin(cycleTime) * 0.05; // Reduced tilt
+
+  // Head bob with gentler motion, slightly leading the body
+  head.position.y = BASE_CHARACTER_SIZE * 0.7 + bounce * 0.5;
+  head.rotation.x = Math.sin(cycleTime + Math.PI / 4) * 0.03; // Reduced rotation
+
+  // Subtle ear flop
+  leftEar.rotation.z = Math.PI / 12 + Math.sin(cycleTime - 0.2) * 0.1; // Reduced flop amplitude
+  rightEar.rotation.z = -Math.PI / 12 - Math.sin(cycleTime - 0.2) * 0.1;
+
+  // Gentler leg animation for hopping motion
+  const legCycle = Math.sin(cycleTime);
+  const legLift = Math.max(0, legCycle) * 0.15 * BASE_CHARACTER_SIZE; // Reduced lift height
+  
+  // Front legs movement
+  const frontLegPhase = Math.max(0, Math.sin(cycleTime));
+  frontLeftFoot.position.y = -BASE_CHARACTER_SIZE * 0.4 + legLift * 0.6;
+  frontLeftFoot.rotation.x = frontLegPhase * 0.3; // Reduced rotation
+  
+  frontRightFoot.position.y = -BASE_CHARACTER_SIZE * 0.4 + legLift * 0.6;
+  frontRightFoot.rotation.x = frontLegPhase * 0.3;
+
+  // Back legs provide the main hopping force
+  // Slightly delayed from front legs for natural movement sequence
+  const backLegPhase = Math.max(0, Math.sin(cycleTime - 0.3));
+  const backLegLift = backLegPhase * 0.2 * BASE_CHARACTER_SIZE; // Reduced lift
+  
+  backLeftFoot.position.y = -BASE_CHARACTER_SIZE * 0.4 + backLegLift;
+  backLeftFoot.rotation.x = -backLegPhase * 0.4; // Reduced rotation
+  
+  backRightFoot.position.y = -BASE_CHARACTER_SIZE * 0.4 + backLegLift;
+  backRightFoot.rotation.x = -backLegPhase * 0.4;
+  
+  // Very subtle tail wiggle during hop
+  const tail = character.getObjectByName("tail");
+  if (tail) {
+    tail.rotation.y = Math.sin(cycleTime * 1.5) * 0.1; // Reduced wiggle
+  }
+}
+
+// Function to reset bunny pose to default
+function resetBunnyPose() {
+  if (!character) return;
+
+  const body = character.getObjectByName("body");
+  const head = character.getObjectByName("head");
+  const leftEar = character.getObjectByName("leftEar");
+  const rightEar = character.getObjectByName("rightEar");
+  const frontLeftFoot = character.getObjectByName("frontLeftFoot");
+  const frontRightFoot = character.getObjectByName("frontRightFoot");
+  const backLeftFoot = character.getObjectByName("backLeftFoot");
+  const backRightFoot = character.getObjectByName("backRightFoot");
+
+  if (!body || !head || !leftEar || !rightEar || !frontLeftFoot || !frontRightFoot || !backLeftFoot || !backRightFoot) {
+    return; // Skip if any part is missing
+  }
+
+  body.position.y = 0;
+  body.rotation.x = Math.PI / 2; // Keep the cylinder aligned with forward direction
+  head.position.y = BASE_CHARACTER_SIZE * 0.7;
+  head.rotation.x = 0;
+  leftEar.rotation.z = Math.PI / 12;
+  rightEar.rotation.z = -Math.PI / 12;
+  frontLeftFoot.position.y = -BASE_CHARACTER_SIZE * 0.4;
+  frontLeftFoot.rotation.x = 0;
+  frontRightFoot.position.y = -BASE_CHARACTER_SIZE * 0.4;
+  frontRightFoot.rotation.x = 0;
+  backLeftFoot.position.y = -BASE_CHARACTER_SIZE * 0.4;
+  backLeftFoot.rotation.x = 0;
+  backRightFoot.position.y = -BASE_CHARACTER_SIZE * 0.4;
+  backRightFoot.rotation.x = 0;
+}
