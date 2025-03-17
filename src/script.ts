@@ -166,9 +166,7 @@ function updateCharacter() {
   // Calculate character speed and size based on camera distance
   const camDistance = camera.position.distanceTo(characterPosition);
   let zoomFactor = Math.min(Math.max((camDistance - _.minDistance) / (_.maxDistance - _.minDistance), 0), 1);
-  
-  // Apply non-linear scaling for smoother transitions at extreme zoom levels
-  zoomFactor = Math.pow(zoomFactor, 0.7);
+  zoomFactor = Math.pow(zoomFactor, 0.7); // Non-linear scaling
   
   // Update movement speed - slower when zoomed in
   MOVE_SPEED = MIN_MOVE_SPEED + (BASE_MOVE_SPEED - MIN_MOVE_SPEED) * zoomFactor;
@@ -179,70 +177,71 @@ function updateCharacter() {
     character.scale.set(newSize / BASE_CHARACTER_SIZE, newSize / BASE_CHARACTER_SIZE, newSize / BASE_CHARACTER_SIZE);
   }
   
-  // Store the previous position to reset if we don't find valid terrain
+  // Store the previous position to reset if no terrain is found
   const previousPosition = characterPosition.clone();
   
-  // Create a raycaster to detect terrain height
+  // Raycast to detect terrain height
   const raycaster = new THREE.Raycaster();
-  
-  // Start raycasting from slightly above the character's position in the direction of planet center
-  const rayStart = characterPosition.clone().normalize().multiplyScalar(1.5); // Start outside the planet
-  const rayDirection = rayStart.clone().negate().normalize(); // Point toward planet center
-  
+  const rayStart = characterPosition.clone().normalize().multiplyScalar(1.5); // Start outside planet
+  const rayDirection = rayStart.clone().negate().normalize(); // Toward planet center
   raycaster.set(rayStart, rayDirection);
   
-  // Only raycast against the main terrain mesh, not children (ocean, vegetation, etc.)
-  // We need to filter out child objects since they aren't part of the terrain
-  const intersects = raycaster.intersectObject(planetMesh, false); // false = don't check children
+  // Only raycast against the main terrain mesh, not children
+  const intersects = raycaster.intersectObject(planetMesh, false);
   
-  // If we found terrain beneath us, adjust height
   if (intersects.length > 0 && intersects[0].distance < 3) {
-    // Get the collision point and adjust character position
     const hitPoint = intersects[0].point;
-    
-    // Set character position to sit on terrain (adding small offset for the bunny height)
     characterPosition = hitPoint.clone().normalize().multiplyScalar(hitPoint.length() + newSize * 0.5);
   } else {
-    // Safety fallback: if no terrain found, keep previous position
     characterPosition = previousPosition;
   }
   
-  // Apply movement by rotating the planet underneath the character
+  // Apply movement by rotating the planet
   if (moveDirection.lengthSq() > 0) {
-    // Get camera-relative directions for intuitive controls
+    // Get camera-relative directions
     const cameraForward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    // Project onto the horizontal plane and normalize
     cameraForward.y = 0;
     cameraForward.normalize();
     
     const cameraRight = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    // Project onto the horizontal plane and normalize
     cameraRight.y = 0;
     cameraRight.normalize();
     
     // Create rotation axis from movement direction
     let rotationAxis = new Vector3();
+    let bunnyForward = new Vector3(); // Direction the bunny should face
     
-    // Combine directions based on input - inverted for natural controls
-    if (moveDirection.x !== 0) {
-      rotationAxis.add(cameraForward.clone().multiplyScalar(moveDirection.x));
-    }
-    if (moveDirection.z !== 0) {
-      rotationAxis.add(cameraRight.clone().multiplyScalar(-moveDirection.z));
+    // Determine movement direction and bunny orientation
+    if (moveDirection.z > 0) {
+      // Forward (W/Up): Bunny faces away from camera
+      rotationAxis.add(cameraRight.clone().multiplyScalar(-1)); // FIXED: Swapped back to original
+      bunnyForward.copy(cameraForward); // FIXED: Swapped back to original
+    } else if (moveDirection.z < 0) {
+      // Backward (S/Down): Bunny faces toward camera
+      rotationAxis.add(cameraRight.clone()); // FIXED: Swapped back to original
+      bunnyForward.copy(cameraForward).negate(); // FIXED: Swapped back to original
     }
     
-    // Apply rotation to planet if we have a valid rotation axis
+    if (moveDirection.x < 0) {
+      // Left (A/Left): Bunny shows left profile (faces right relative to camera)
+      rotationAxis.add(cameraForward.clone().negate()); // Rotate planet forward (inverted)
+      bunnyForward.copy(cameraRight);
+    } else if (moveDirection.x > 0) {
+      // Right (D/Right): Bunny shows right profile (faces left relative to camera)
+      rotationAxis.add(cameraForward.clone()); // Rotate planet backward (inverted)
+      bunnyForward.copy(cameraRight).negate();
+    }
+    
+    // Apply planet rotation if there's movement
     if (rotationAxis.lengthSq() > 0) {
       rotationAxis.normalize();
       const rotationAngle = MOVE_SPEED;
-      
-      // Rotate planet in the opposite direction of movement
       planetMesh.rotateOnWorldAxis(rotationAxis, -rotationAngle);
       
-      // Update character position after rotation to maintain terrain contact
+      // Recast ray to update position after rotation
       const recastRay = new THREE.Raycaster();
       recastRay.set(
-        characterPosition.clone().normalize().multiplyScalar(1.5), 
+        characterPosition.clone().normalize().multiplyScalar(1.5),
         characterPosition.clone().negate().normalize()
       );
       const recastHits = recastRay.intersectObject(planetMesh, false);
@@ -252,31 +251,39 @@ function updateCharacter() {
         characterPosition = newHitPoint.clone().normalize().multiplyScalar(newHitPoint.length() + newSize * 0.5);
       }
       
-      // Orient the bunny in the direction of movement
-      if (character) {
-        // Get the direction of movement in world space
-        const movementDirection = rotationAxis.clone().cross(characterPosition.clone().normalize());
+      // Orient the bunny
+      if (character && bunnyForward.lengthSq() > 0) {
+        // Define bunny's up direction (radial from planet center)
+        const bunnyUp = characterPosition.clone().normalize();
         
-        // Create a quaternion that orients the bunny to face the movement direction
-        const lookDirection = movementDirection.clone().normalize();
-        const characterUp = characterPosition.clone().normalize();
+        // Ensure bunnyForward is perpendicular to bunnyUp
+        bunnyForward.sub(bunnyUp.clone().multiplyScalar(bunnyForward.dot(bunnyUp))).normalize();
         
-        // Create a coordinate system for the bunny
-        const forward = lookDirection;
-        const up = characterUp;
-        const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+        // Calculate right vector for proper orientation
+        const bunnyRight = new Vector3().crossVectors(bunnyForward, bunnyUp).normalize();
         
         // Recalculate forward to ensure orthogonality
-        forward.crossVectors(up, right).normalize();
+        bunnyForward.crossVectors(bunnyUp, bunnyRight).normalize();
         
-        // Create rotation matrix and extract quaternion
-        const rotMatrix = new THREE.Matrix4().makeBasis(right, up, forward);
-        const newRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+        // Create rotation matrix
+        const rotMatrix = new THREE.Matrix4().makeBasis(bunnyRight, bunnyUp, bunnyForward.negate()); // Negate forward since model faces +Z
+        const targetRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
         
-        // Apply rotation with smoothing
-        characterRotation.slerp(newRotation, 0.15);
+        // Smoothly interpolate rotation
+        characterRotation.slerp(targetRotation, 0.15);
       }
     }
+  } else {
+    // If no movement, maintain current rotation but ensure up alignment
+    const bunnyUp = characterPosition.clone().normalize();
+    const currentForward = new Vector3(0, 0, 1).applyQuaternion(characterRotation);
+    currentForward.sub(bunnyUp.clone().multiplyScalar(currentForward.dot(bunnyUp))).normalize();
+    const bunnyRight = new Vector3().crossVectors(currentForward, bunnyUp).normalize();
+    currentForward.crossVectors(bunnyUp, bunnyRight).normalize();
+    
+    const rotMatrix = new THREE.Matrix4().makeBasis(bunnyRight, bunnyUp, currentForward.negate());
+    const idleRotation = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+    characterRotation.slerp(idleRotation, 0.05);
   }
   
   // Update character position and rotation
