@@ -18,8 +18,8 @@ if (!canvas) {
 }
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, width / height, 0.01, 30);
-camera.position.set(0, 3, 0); // Position camera above for top-down view
-camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
+camera.position.set(0, 1.1, 2.5); // Position camera to look at the character
+camera.up.set(0, 1, 0); // Set up vector to y-axis for proper orientation
 
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
@@ -36,10 +36,12 @@ _.minDistance = 0.5;
 _.maxDistance = 5;
 _.enableDamping = true;
 _.dampingFactor = 0.1;
-// Disable orbit controls rotation
-_.enableRotate = false;
+// Enable orbit controls rotation
+_.enableRotate = true;
 _.enabled = true;
 _.zoomSpeed = 0.5;
+// Set target to the character position
+_.target.set(0, 1.1, 0);
 
 let hasPlanet = false;
 
@@ -98,6 +100,9 @@ renderer.setAnimationLoop((delta) => {
   // Update character position if it exists
   if (character && planetMesh) {
     updateCharacter();
+    
+    // Ensure orbit controls target stays with the character
+    _.target.copy(characterPosition);
   }
 
   // Animate water level with a subtle sine wave
@@ -121,17 +126,15 @@ renderer.setAnimationLoop((delta) => {
     hasPlanet = true;
   }
   
-  // Ensure camera stays in position looking down at the planet
-  camera.position.set(0, 3, 0);
-  camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
-  camera.lookAt(new Vector3(0, 0, 0));
+  // Update orbit controls
+  _.update();
 });
 
 // Function to update character position and camera
 function updateCharacter() {
   if (!character || !planetMesh) return;
   
-  // Keep character fixed at the center position on top of planet (y-axis)
+  // Keep character fixed at the center position
   characterPosition = new Vector3(0, 1.1, 0);
   
   // Apply movement by rotating the planet underneath the character
@@ -139,6 +142,7 @@ function updateCharacter() {
     // Calculate rotation axis and angle based on input
     let rotationAxis = new Vector3();
     
+    // Use fixed world axes for consistent rotation
     if (moveDirection.x !== 0) {
       // Left/right movement rotates around the y axis
       rotationAxis.add(new Vector3(0, 1, 0).multiplyScalar(-moveDirection.x));
@@ -296,7 +300,7 @@ async function createCharacter() {
     });
     character = new THREE.Mesh(geometry, material);
     
-    // Position character on top of the planet
+    // Position character at the fixed center position
     characterPosition = new Vector3(0, 1.1, 0);
     character.position.copy(characterPosition);
     
@@ -308,10 +312,8 @@ async function createCharacter() {
     // Add character to the scene
     scene.add(character);
     
-    // Set camera position to view the planet and character
-    camera.position.set(0, 3, 0);
-    camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
-    camera.lookAt(new Vector3(0, 0, 0));
+    // Set orbit controls target to the character
+    _.target.copy(characterPosition);
     
     console.log("Ball character created and added to scene");
   } catch (error) {
@@ -348,7 +350,7 @@ async function createPlanet(preset: string | undefined = undefined) {
     if (!hadCharacter) {
       createCharacter();
     } else {
-      // Reset character position on top of planet
+      // Reset character position to the fixed center position
       characterPosition = new Vector3(0, 1.1, 0);
       if (character) {
         character.position.copy(characterPosition);
@@ -358,10 +360,8 @@ async function createPlanet(preset: string | undefined = undefined) {
         isJumping = false;
       }
       
-      // Set camera position to view the planet and character
-      camera.position.set(0, 3, 0);
-      camera.up.set(0, 0, 1); // Set up vector to z-axis for proper orientation
-      camera.lookAt(new Vector3(0, 0, 0));
+      // Set orbit controls target to the character
+      _.target.copy(characterPosition);
     }
     
     // Manually add models to the planet if needed
