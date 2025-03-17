@@ -7,6 +7,8 @@ import {
   Quaternion,
   Vector3,
   IcosahedronGeometry,
+  SphereGeometry,
+  MeshBasicMaterial
 } from "three";
 import { Biome, type BiomeOptions } from "./biome";
 import { loadModels } from "./models";
@@ -14,6 +16,7 @@ import { loadModels } from "./models";
 import { PlanetMaterialWithCaustics } from "./materials/OceanCausticsMaterial";
 import { createAtmosphereMaterial } from "./materials/AtmosphereMaterial";
 import { createBufferGeometry } from "./helper/helper";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 // Helper function to handle both ArrayBuffer and regular arrays
 function createGeometryFromData(positions: ArrayBuffer | number[], colors: ArrayBuffer | number[], normals: ArrayBuffer | number[]) {
@@ -111,107 +114,109 @@ export class Planet {
       requestId: number;
     };
   }) {
-    console.log("Received message from worker:", event.data.type);
-    const { requestId } = event.data;
+    const { type, data, requestId, error } = event.data;
+    console.log("Planet received message:", type, "requestId:", requestId);
 
-    const callback = this.callbacks[requestId];
-    if (!callback) {
-      console.error("No callback found for requestId:", requestId);
+    if (type === "error") {
+      console.error("Error in worker:", error);
+      if (this.callbacks[requestId]) {
+        this.callbacks[requestId](new Mesh());
+        delete this.callbacks[requestId];
+      }
       return;
     }
 
-    if (event.data.type === "error") {
-      console.error("Worker reported an error:", event.data.error);
-      // Create a simple sphere as fallback
-      const geometry = new IcosahedronGeometry(1, 4);
-      const material = new MeshStandardMaterial({ color: 0x00ff00 });
-      const mesh = new Mesh(geometry, material);
-      callback(mesh);
-      delete this.callbacks[requestId];
+    if (!data) {
+      console.error("No data in message");
       return;
     }
 
-    const data = event.data.data!;
-    
     const geometry = createGeometryFromData(
       data.positions,
       data.colors,
-      data.normals,
+      data.normals
     );
 
     const oceanGeometry = createGeometryFromData(
       data.oceanPositions,
       data.oceanColors,
-      data.oceanNormals,
+      data.oceanNormals
     );
 
+    // Add morph targets to ocean geometry
     oceanGeometry.morphAttributes.position = [
-      new Float32BufferAttribute(data.oceanMorphPositions, 3),
+      new Float32BufferAttribute(
+        data.oceanMorphPositions instanceof ArrayBuffer
+          ? new Float32Array(data.oceanMorphPositions)
+          : data.oceanMorphPositions,
+        3
+      ),
     ];
     oceanGeometry.morphAttributes.normal = [
-      new Float32BufferAttribute(data.oceanMorphNormals, 3),
+      new Float32BufferAttribute(
+        data.oceanMorphNormals instanceof ArrayBuffer
+          ? new Float32Array(data.oceanMorphNormals)
+          : data.oceanMorphNormals,
+        3
+      ),
     ];
 
-    this.vegetationPositions = data.vegetation;
-
-    const materialOptions = { vertexColors: true };
-
-    const material =
-      this.options.material === "caustics"
-        ? new PlanetMaterialWithCaustics({
-            ...materialOptions,
-            shape: this.shape,
-          })
-        : new MeshStandardMaterial(materialOptions);
-
-    const planetMesh = new Mesh(geometry, material);
-    planetMesh.castShadow = true;
+    // Create materials
+    let material: MeshStandardMaterial;
+    let oceanMaterial: MeshStandardMaterial;
 
     if (this.options.material === "caustics") {
-      planetMesh.onBeforeRender = (
-        renderer,
-        scene,
-        camera,
-        geometry,
-        material,
-      ) => {
-        if (material instanceof PlanetMaterialWithCaustics) {
-          material.update();
-        }
-      };
-    }
-
-    const oceanMesh = new Mesh(
-      oceanGeometry,
-      new MeshStandardMaterial({
+      const causticsMaterial = new PlanetMaterialWithCaustics({
         vertexColors: true,
         transparent: true,
-        opacity: 0.7,
-        metalness: 0.5,
-        roughness: 0.5,
-      }),
-    );
-
-    planetMesh.add(oceanMesh);
-    oceanMesh.onBeforeRender = (
-      renderer,
-      scene,
-      camera,
-      geometry,
-      material,
-    ) => {
-      // update morph targets
-      if (oceanMesh.morphTargetInfluences)
-        oceanMesh.morphTargetInfluences[0] =
-          Math.sin(performance.now() / 1000) * 0.5 + 0.5;
-    };
-
-    if (this.options.atmosphere?.enabled !== false) {
-      this.addAtmosphere(planetMesh);
+        opacity: 0.8,
+        roughness: 0.2,
+        shape: this.shape,
+      });
+      oceanMaterial = causticsMaterial;
+      material = new MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.8,
+      });
+    } else {
+      material = new MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.8,
+      });
+      oceanMaterial = new MeshStandardMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.8,
+        roughness: 0.2,
+      });
     }
-    callback(planetMesh);
 
-    delete this.callbacks[requestId];
+    // Create meshes
+    const mesh = new Mesh(geometry, material);
+    const oceanMesh = new Mesh(oceanGeometry, oceanMaterial);
+    oceanMesh.morphTargetInfluences = [0];
+
+    // Add ocean mesh as a child
+    mesh.add(oceanMesh);
+
+    // Store vegetation positions for later use
+    this.vegetationPositions = data.vegetation;
+
+    // Load and place vegetation models
+    this.placeVegetation(mesh).then(() => {
+      console.log("Vegetation placed");
+    });
+
+    // Add atmosphere if enabled
+    if (this.options.atmosphere?.enabled) {
+      this.addAtmosphere(mesh);
+    }
+
+    // Call callback
+    if (this.callbacks[requestId]) {
+      this.callbacks[requestId](mesh);
+      delete this.callbacks[requestId];
+    }
   }
 
   async create(): Promise<Mesh> {
@@ -223,17 +228,13 @@ export class Planet {
 
     const loaded: Promise<Object3D[] | Mesh>[] = [];
 
-    // Skip model loading for local development to avoid errors
-    console.log("Skipping vegetation model loading for local development");
-    
+    // Load the planet mesh
     const planetPromise = this.createMesh();
     loaded.push(planetPromise);
 
     await Promise.all(loaded);
 
     const planet = await planetPromise;
-
-    // Skip vegetation placement since we're not loading models
     
     return planet;
   }
@@ -268,6 +269,8 @@ export class Planet {
   }
 
   updatePosition(item: Object3D, pos: Vector3) {
+    console.log(`Positioning model at: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`);
+    
     item.position.copy(pos);
 
     if (this.shape === "sphere") {
@@ -279,6 +282,215 @@ export class Planet {
       item.quaternion.copy(this.tempQuaternion);
 
       item.up = b;
+    }
+  }
+
+  // Add a new method to load and place vegetation models
+  async placeVegetation(planet: Mesh): Promise<void> {
+    if (!this.vegetationPositions) {
+      console.log("No vegetation positions");
+      return;
+    }
+
+    console.log("Placing vegetation with positions:", Object.keys(this.vegetationPositions).map(key => 
+      `${key}: ${this.vegetationPositions![key].length} positions`
+    ));
+    
+    // Check if there are any positions at all
+    const totalPositions = Object.values(this.vegetationPositions).reduce((sum, positions) => sum + positions.length, 0);
+    if (totalPositions === 0) {
+      console.log("No vegetation positions found in any category, adding manual models");
+      await this.addManualModels(planet);
+      return;
+    }
+    
+    // Load models for each vegetation type
+    const modelPromises: Promise<void>[] = [];
+    
+    for (const [name, positions] of Object.entries(this.vegetationPositions)) {
+      if (positions.length === 0) {
+        continue;
+      }
+      
+      console.log(`Loading ${positions.length} instances of ${name}`);
+      
+      const promise = loadModels(name)
+        .then((models) => {
+          if (models.length === 0) {
+            console.warn(`No models loaded for ${name}`);
+            return;
+          }
+          
+          console.log(`Successfully loaded ${models.length} variants of ${name}, placing on planet`);
+          
+          // Place each instance of this vegetation type
+          positions.forEach((position, index) => {
+            // Choose a random model variant
+            const modelIndex = Math.floor(Math.random() * models.length);
+            const model = models[modelIndex].clone();
+            
+            // Scale the model down to fit the planet
+            const scale = 0.025; // Reduced from 0.05 to 0.025
+            model.scale.set(scale, scale, scale);
+            
+            // Position and orient the model
+            this.updatePosition(model, position);
+            
+            // Add to the planet
+            planet.add(model);
+            
+            // Log every 10th model placement for debugging
+            if (index % 10 === 0) {
+              console.log(`Placed model ${index} of ${name} at position:`, position);
+            }
+          });
+          
+          console.log(`Placed ${positions.length} instances of ${name}`);
+        })
+        .catch((error) => {
+          console.error(`Error loading models for ${name}:`, error);
+        });
+      
+      modelPromises.push(promise);
+    }
+    
+    // Wait for all models to be loaded and placed
+    await Promise.all(modelPromises);
+    
+    // Log the total number of children on the planet
+    console.log(`Planet now has ${planet.children.length} children`);
+  }
+  
+  // Add a method to manually place models on the planet
+  async addManualModels(planet: Mesh): Promise<void> {
+    console.log("Adding manual models to the planet");
+    
+    // Define positions around the planet
+    const positions = [
+      new Vector3(0, 1, 0),
+      new Vector3(1, 0, 0),
+      new Vector3(0, 0, 1),
+      new Vector3(-1, 0, 0),
+      new Vector3(0, 0, -1),
+      new Vector3(0.7, 0.7, 0),
+      new Vector3(-0.7, 0.7, 0),
+      new Vector3(0, -1, 0),
+    ];
+    
+    try {
+      // Load models directly using GLTFLoader
+      const loader = new GLTFLoader();
+      
+      // Determine which models to load based on the planet type
+      let treeModelPath = "/lowpoly_nature/PineTree_1.gltf";
+      let secondaryTreePath = "/lowpoly_nature/CommonTree_1.gltf";
+      
+      // Check the biome type to determine which models to use
+      if (this.biomeOptions.preset === "beach") {
+        treeModelPath = "/lowpoly_nature/PalmTree_1.gltf";
+        secondaryTreePath = "/lowpoly_nature/PalmTree_2.gltf";
+      } else if (this.biomeOptions.preset === "snowForest") {
+        treeModelPath = "/lowpoly_nature/PineTree_Snow_1.gltf";
+        secondaryTreePath = "/lowpoly_nature/CommonTree_Snow_1.gltf";
+      }
+      
+      // Load primary tree model
+      const primaryTreePromise = new Promise<Object3D>((resolve, reject) => {
+        loader.load(
+          treeModelPath,
+          (gltf) => {
+            console.log(`Loaded primary tree model: ${treeModelPath}`);
+            resolve(gltf.scene);
+          },
+          undefined,
+          (error) => {
+            console.error(`Error loading primary tree model: ${error}`);
+            reject(error);
+          }
+        );
+      });
+      
+      // Load secondary tree model
+      const secondaryTreePromise = new Promise<Object3D>((resolve, reject) => {
+        loader.load(
+          secondaryTreePath,
+          (gltf) => {
+            console.log(`Loaded secondary tree model: ${secondaryTreePath}`);
+            resolve(gltf.scene);
+          },
+          undefined,
+          (error) => {
+            console.error(`Error loading secondary tree model: ${error}`);
+            reject(error);
+          }
+        );
+      });
+      
+      // Load Rock model
+      const rockPromise = new Promise<Object3D>((resolve, reject) => {
+        loader.load(
+          "/lowpoly_nature/Rock_1.gltf",
+          (gltf) => {
+            console.log("Loaded Rock model");
+            resolve(gltf.scene);
+          },
+          undefined,
+          (error) => {
+            console.error("Error loading Rock model:", error);
+            reject(error);
+          }
+        );
+      });
+      
+      // Wait for all models to load
+      const [primaryTree, secondaryTree, rock] = await Promise.all([
+        primaryTreePromise,
+        secondaryTreePromise,
+        rockPromise
+      ]);
+      
+      // Place models on the planet
+      positions.forEach((position, index) => {
+        let model: Object3D;
+        
+        // Choose model based on index
+        if (index < 3) {
+          model = primaryTree.clone();
+          model.scale.set(0.025, 0.025, 0.025);
+        } else if (index < 6) {
+          model = secondaryTree.clone();
+          model.scale.set(0.025, 0.025, 0.025);
+        } else {
+          model = rock.clone();
+          model.scale.set(0.015, 0.015, 0.015);
+        }
+        
+        // Position and orient the model
+        const normalizedPosition = position.clone().normalize();
+        model.position.copy(normalizedPosition);
+        
+        // Orient the model to face outward from the sphere center
+        const up = new Vector3(0, 1, 0);
+        const quaternion = new Quaternion().setFromUnitVectors(up, normalizedPosition);
+        model.quaternion.copy(quaternion);
+        
+        // Add to the planet
+        planet.add(model);
+        
+        // Add a small sphere to mark the position (for debugging)
+        const sphere = new Mesh(
+          new SphereGeometry(0.02),
+          new MeshBasicMaterial({ color: 0xff0000 })
+        );
+        sphere.position.copy(normalizedPosition);
+        planet.add(sphere);
+      });
+      
+      console.log(`Added ${positions.length} models to the planet`);
+      console.log(`Planet now has ${planet.children.length} children after manual placement`);
+      
+    } catch (error) {
+      console.error("Error adding manual models:", error);
     }
   }
 }

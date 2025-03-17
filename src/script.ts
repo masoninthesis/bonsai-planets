@@ -3,6 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Planet } from "./worlds/planet";
 import { Stars } from "./worlds/stars";
 import { planetPresets } from "./worlds/presets";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 const presets = ["beach", "forest", "snowForest"];
 
@@ -109,6 +110,36 @@ if (button) {
   });
 }
 
+// Add event listeners for the new buttons
+const beachButton = document.getElementById("beach");
+if (beachButton) {
+  beachButton.addEventListener("click", () => {
+    createPlanet("beach");
+  });
+}
+
+const forestButton = document.getElementById("forest");
+if (forestButton) {
+  forestButton.addEventListener("click", () => {
+    createPlanet("forest");
+  });
+}
+
+const snowButton = document.getElementById("snow");
+if (snowButton) {
+  snowButton.addEventListener("click", () => {
+    createPlanet("snowForest");
+  });
+}
+
+const randomButton = document.getElementById("random");
+if (randomButton) {
+  randomButton.addEventListener("click", () => {
+    let randomPreset = presets[Math.floor(Math.random() * presets.length)];
+    createPlanet(randomPreset);
+  });
+}
+
 async function createPlanet(preset: string | undefined = undefined) {
   if (!preset) {
     preset = presets[Math.floor(Math.random() * presets.length)];
@@ -127,6 +158,31 @@ async function createPlanet(preset: string | undefined = undefined) {
     scene.remove(planetMesh);
     scene.add(mesh);
     planetMesh = mesh;
+    
+    // Manually add models to the planet if needed
+    if (mesh.children.length < 3) { // Only ocean and atmosphere
+      console.log("No vegetation detected, manually adding models");
+      await planet.addManualModels(mesh);
+    }
+    
+    // Directly add a model to the scene as a test
+    const loader = new GLTFLoader();
+    loader.load(
+      "/lowpoly_nature/PineTree_1.gltf",
+      (gltf) => {
+        console.log("Loaded test model");
+        const model = gltf.scene;
+        model.scale.set(0.025, 0.025, 0.025);
+        model.position.set(0, 1.5, 0);
+        scene.add(model);
+        console.log("Added test model to scene");
+      },
+      undefined,
+      (error) => {
+        console.error("Error loading test model:", error);
+      }
+    );
+    
     console.timeEnd("planet");
   } catch (error) {
     console.error("Error creating planet:", error);

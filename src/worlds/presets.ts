@@ -39,7 +39,7 @@ const beachBiome: BiomeOptions = {
     items: [
       {
         name: "Rock",
-        density: 50,
+        density: 100,
         minimumHeight: 0.1,
         colors: {
           Gray: { array: [0x775544] },
@@ -47,7 +47,7 @@ const beachBiome: BiomeOptions = {
       },
       {
         name: "PalmTree",
-        density: 50,
+        density: 150,
         minimumHeight: 0.1,
         colors: {
           Brown: { array: [0x8b4513, 0x5b3105] },
@@ -104,7 +104,7 @@ const forestBiome: BiomeOptions = {
     items: [
       {
         name: "Rock",
-        density: 5,
+        density: 20,
         minimumHeight: 0.1,
         colors: {
           Gray: { array: [0x888888, 0x616161, 0x414141] },
@@ -112,49 +112,49 @@ const forestBiome: BiomeOptions = {
       },
       {
         name: "CommonTree",
-        density: 5,
+        density: 25,
         minimumHeight: 0.0,
       },
       {
         name: "Bush",
-        density: 5,
+        density: 25,
         minimumHeight: 0.0,
       },
       {
         name: "CommonTree_Dead",
-        density: 5,
+        density: 15,
       },
       {
         name: "PineTree",
-        density: 5,
+        density: 25,
       },
       {
         name: "TreeStump",
-        density: 1,
+        density: 5,
       },
       {
         name: "TreeStump_Moss",
-        density: 1,
+        density: 5,
       },
       {
         name: "Willow",
-        density: 5,
+        density: 20,
       },
       {
         name: "Willow_Dead",
-        density: 5,
+        density: 15,
       },
       {
         name: "WoodLog",
-        density: 1,
+        density: 5,
       },
       {
         name: "BirchTree",
-        density: 5,
+        density: 20,
       },
       {
         name: "BirchTree_Dead",
-        density: 5,
+        density: 15,
       },
     ],
   },
@@ -200,7 +200,7 @@ const snowForestBiome: BiomeOptions = {
     items: [
       {
         name: "Rock_Snow",
-        density: 5,
+        density: 20,
         minimumHeight: 0.1,
         colors: {
           Gray: { array: [0x888888, 0x616161, 0x414141] },
@@ -208,49 +208,49 @@ const snowForestBiome: BiomeOptions = {
       },
       {
         name: "CommonTree_Snow",
-        density: 5,
+        density: 25,
         minimumHeight: 0.0,
       },
       {
         name: "Bush_Snow",
-        density: 5,
+        density: 25,
         minimumHeight: 0.0,
       },
       {
         name: "CommonTree_Dead_Snow",
-        density: 5,
+        density: 15,
       },
       {
         name: "PineTree_Snow",
+        density: 25,
+      },
+      {
+        name: "TreeStump_Snow",
         density: 5,
       },
       {
         name: "TreeStump_Snow",
-        density: 1,
-      },
-      {
-        name: "TreeStump_Snow",
-        density: 1,
+        density: 5,
       },
       {
         name: "Willow_Snow",
-        density: 5,
+        density: 20,
       },
       {
         name: "Willow_Dead_Snow",
-        density: 5,
+        density: 15,
       },
       {
         name: "WoodLog_Snow",
-        density: 1,
+        density: 5,
       },
       {
         name: "BirchTree_Snow",
-        density: 5,
+        density: 20,
       },
       {
         name: "BirchTree_Dead_Snow",
-        density: 5,
+        density: 15,
       },
     ],
   },

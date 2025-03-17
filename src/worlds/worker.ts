@@ -217,8 +217,54 @@ function createGeometry(
     mid.copy(a).add(b).add(c).divideScalar(3);
     mid.normalize();
 
-    // Skip vegetation placement for local development
-    // This will be handled differently
+    // Place vegetation
+    if (biome.options.vegetation?.items) {
+      for (const item of biome.options.vegetation.items) {
+        // Skip if density is too low
+        if (item.density === undefined || item.density <= 0) continue;
+        
+        // Calculate probability based on density and face size
+        const probability = item.density * faceSize * 0.8;
+        
+        // Random chance to place vegetation
+        if (Math.random() > probability) continue;
+        
+        // Get normalized height at mid point
+        const height = biome.getHeight(mid);
+        const normalizedHeight = Math.min(-height / biome.min, 0) + Math.max(height / biome.max, 0);
+        
+        // Calculate steepness using the face normal
+        const normal = new Vector3().crossVectors(
+          b.clone().sub(a), 
+          c.clone().sub(a)
+        ).normalize();
+        const steepness = Math.acos(Math.abs(normal.dot(planetOptions.shape == "plane" ? planeUp : mid)));
+        
+        // Check height constraints
+        if (item.minimumHeight !== undefined && normalizedHeight < item.minimumHeight) continue;
+        if (item.maximumHeight !== undefined && normalizedHeight > item.maximumHeight) continue;
+        
+        // Check slope constraints
+        if (item.minimumSlope !== undefined && steepness < item.minimumSlope) continue;
+        if (item.maximumSlope !== undefined && steepness > item.maximumSlope) continue;
+        
+        // Check distance constraints
+        if (item.minimumDistance !== undefined || item.maximumDistance !== undefined) {
+          const closestDistance = biome.closestVegetationDistance(mid, item.maximumDistance ?? 1);
+          if (item.minimumDistance !== undefined && (!closestDistance || closestDistance < item.minimumDistance)) continue;
+          if (item.maximumDistance !== undefined && closestDistance && closestDistance > item.maximumDistance) continue;
+        }
+        
+        // Add vegetation to the biome
+        biome.addVegetation(item, mid.clone(), normalizedHeight, steepness);
+        
+        // Add to placed vegetation for return
+        if (!placedVegetation[item.name]) {
+          placedVegetation[item.name] = [];
+        }
+        placedVegetation[item.name].push(mid.clone());
+      }
+    }
     
     let normalizedHeight = 0;
 
@@ -457,5 +503,37 @@ function createGeometry(
   mainGeometry.setAttribute("color", new BufferAttribute(colors, 3));
   oceanGeometry.setAttribute("color", new BufferAttribute(oceanColors, 3));
 
+  // Log vegetation positions
+  console.log("Vegetation positions generated:", Object.keys(placedVegetation).map(key => 
+    `${key}: ${placedVegetation[key].length} positions`
+  ));
+  
+  // If no vegetation positions were generated, add some manually
+  const totalPositions = Object.values(placedVegetation).reduce((sum, positions) => sum + positions.length, 0);
+  if (totalPositions === 0) {
+    console.log("No vegetation positions generated, adding manual positions");
+    
+    // Add some manual positions for common vegetation types
+    const vegetationTypes = ["PineTree", "CommonTree", "Rock", "Willow", "PalmTree"];
+    
+    for (const type of vegetationTypes) {
+      placedVegetation[type] = [];
+      
+      // Add 8 positions around the planet
+      placedVegetation[type].push(new Vector3(0, 1, 0));
+      placedVegetation[type].push(new Vector3(1, 0, 0));
+      placedVegetation[type].push(new Vector3(0, 0, 1));
+      placedVegetation[type].push(new Vector3(-1, 0, 0));
+      placedVegetation[type].push(new Vector3(0, 0, -1));
+      placedVegetation[type].push(new Vector3(0.7, 0.7, 0));
+      placedVegetation[type].push(new Vector3(-0.7, 0.7, 0));
+      placedVegetation[type].push(new Vector3(0, -1, 0));
+    }
+    
+    console.log("Added manual vegetation positions:", Object.keys(placedVegetation).map(key => 
+      `${key}: ${placedVegetation[key].length} positions`
+    ));
+  }
+  
   return [mainGeometry, oceanGeometry, placedVegetation];
 }

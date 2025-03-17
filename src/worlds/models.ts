@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-// Change from absolute path to relative path for local development
-const basePath = "./";
+// Path to the models directory
+const basePath = "/lowpoly_nature/";
 
 const lowPolyNatureCollectionModels: Record<
   string,
@@ -105,11 +105,11 @@ export function getModelPathsAndMaterials(
   if (model.versions) {
     for (let i = 1; i <= model.versions; i++) {
       filePaths.push(
-        `${basePath}${collections[collection].name}/${name}_${i}.gltf`,
+        `${basePath}${name}_${i}.gltf`,
       );
     }
   } else {
-    filePaths.push(`${basePath}${collections[collection].name}/${name}.gltf`);
+    filePaths.push(`${basePath}${name}.gltf`);
   }
 
   return {
@@ -126,27 +126,44 @@ export async function loadModels(
   const modelInfo = getModelPathsAndMaterials(name, collection);
 
   if (!modelInfo) {
+    console.error(`No model info found for ${name}`);
     return [];
   }
 
+  console.log(`Loading ${modelInfo.filePaths.length} models for ${name}:`, modelInfo.filePaths);
+
   const promises = modelInfo.filePaths.map((filePath) => {
     return new Promise<THREE.Object3D>((resolve, reject) => {
+      console.log(`Loading model from path: ${filePath}`);
       loader.load(
         filePath,
         (gltf) => {
+          console.log(`Successfully loaded model: ${filePath}`);
+          
+          // Check if the model has any meshes
+          let hasMeshes = false;
+          gltf.scene.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              hasMeshes = true;
+              child.receiveShadow = true;
+              child.castShadow = true;
+            }
+          });
+          
+          if (!hasMeshes) {
+            console.warn(`Model ${filePath} has no meshes`);
+          }
+          
           gltf.scene.userData = {
             name,
             path: filePath,
           };
-          gltf.scene.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-              child.receiveShadow = true;
-              child.castShadow = false;
-            }
-          });
+          
           resolve(gltf.scene);
         },
-        undefined,
+        (progress) => {
+          console.log(`Loading progress for ${filePath}:`, progress);
+        },
         (error) => {
           console.error(`Failed to load model ${filePath}:`, error);
           reject(error);
@@ -155,5 +172,12 @@ export async function loadModels(
     });
   });
 
-  return Promise.all(promises);
+  try {
+    const models = await Promise.all(promises);
+    console.log(`Successfully loaded ${models.length} models for ${name}`);
+    return models;
+  } catch (error) {
+    console.error(`Error loading models for ${name}:`, error);
+    return [];
+  }
 }

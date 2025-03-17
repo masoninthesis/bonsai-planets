@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standalone Model Test</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #000;
+    }
+    #status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-family: Arial, sans-serif;
+      padding: 10px;
+      background-color: rgba(0,0,0,0.5);
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Loading model...</div>
+  
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/loaders/GLTFLoader.js';
+    
+    // Create status element
+    const statusElement = document.getElementById('status');
+    
+    // Function to log messages
+    function log(message) {
+      console.log(message);
+      statusElement.innerHTML += `<div>${message}</div>`;
+    }
+    
+    // Create scene
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 30);
+    camera.position.set(0, 0, 3);
+    
+    // Create renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+    
+    // Add controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    
+    // Add lights
+    const light = new THREE.DirectionalLight(0xffffff, 2);
+    light.position.set(2, 1, 0);
+    scene.add(light);
+    
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+    
+    // Add grid helper
+    const gridHelper = new THREE.GridHelper(10, 10);
+    scene.add(gridHelper);
+    
+    // Load model
+    const loader = new GLTFLoader();
+    loader.load(
+      '/lowpoly_nature/PineTree_1.gltf',
+      function(gltf) {
+        log('Model loaded successfully');
+        
+        const model = gltf.scene;
+        
+        // Scale the model
+        model.scale.set(0.025, 0.025, 0.025);
+        
+        // Add to scene
+        scene.add(model);
+        
+        // Add a sphere to mark the origin
+        const sphere = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1),
+          new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        );
+        scene.add(sphere);
+        
+        log('Model added to scene');
+      },
+      function(xhr) {
+        log(`Loading progress: ${(xhr.loaded / xhr.total * 100).toFixed(2)}%`);
+      },
+      function(error) {
+        log(`Error loading model: ${error}`);
+      }
+    );
+    
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    
+    animate();
+    
+    // Handle window resize
+    window.addEventListener('resize', function() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html> 
