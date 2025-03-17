@@ -106,7 +106,36 @@ let rotate = false;
 let debugMode = false;
 let debugRay: THREE.Line | null = null;
 
+// Create FPS counter element
+const fpsCounter = document.createElement("div");
+fpsCounter.style.position = "absolute";
+fpsCounter.style.top = "10px";
+fpsCounter.style.right = "10px";
+fpsCounter.style.color = "white";
+fpsCounter.style.fontFamily = "monospace";
+fpsCounter.style.fontSize = "14px";
+fpsCounter.style.padding = "5px";
+fpsCounter.style.backgroundColor = "rgba(0,0,0,0.5)";
+fpsCounter.style.borderRadius = "4px";
+fpsCounter.style.zIndex = "1000";
+document.body.appendChild(fpsCounter);
+
+// FPS calculation variables
+let frameCount = 0;
+let lastFpsUpdateTime = 0;
+let currentFps = 0;
+
 renderer.setAnimationLoop((delta) => {
+  // Update FPS counter
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsUpdateTime > 1000) { // Update every second
+    currentFps = Math.round((frameCount * 1000) / (now - lastFpsUpdateTime));
+    fpsCounter.textContent = `FPS: ${currentFps}`;
+    frameCount = 0;
+    lastFpsUpdateTime = now;
+  }
+
   renderer.render(scene, camera);
 
   if (rotate) planetMesh.rotation.y += 0.001;
