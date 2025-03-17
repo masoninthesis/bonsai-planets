@@ -55,22 +55,28 @@ let planetMesh: THREE.Mesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
 scene.add(planetMesh);
 
 const light = new THREE.DirectionalLight();
-light.intensity = 2;
-light.position.set(2, 1, 0);
+light.intensity = 3; // Increased intensity for better visibility
+light.position.set(2, 2, 1); // Adjusted position for better shadows
 scene.add(light);
 light.castShadow = true;
-light.shadow.mapSize.width = 512;
-light.shadow.mapSize.height = 512;
+light.shadow.mapSize.width = 1024; // Higher resolution shadows
+light.shadow.mapSize.height = 1024;
 light.shadow.camera.far = 10;
 light.shadow.camera.near = 0.1;
 
-light.shadow.bias = 0.01;
+light.shadow.bias = 0.001; // Reduced bias to minimize shadow artifacts
+light.shadow.normalBias = 0.02; // Add normal bias to reduce shadow acne
 light.shadow.camera.top = 2;
 light.shadow.camera.right = 2;
 light.shadow.camera.bottom = -2;
 light.shadow.camera.left = -2;
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
+// Add a secondary light from another angle
+const secondaryLight = new THREE.DirectionalLight(0xffffcc, 1);
+secondaryLight.position.set(-1, 0.5, -1);
+scene.add(secondaryLight);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); // Increased ambient for better overall visibility
 scene.add(ambientLight);
 
 // Character variables
@@ -87,6 +93,10 @@ let lastDelta = 0;
 // Disable auto-rotation by default
 let rotate = false;
 
+// Debug options
+let debugMode = false;
+let debugRay: THREE.Line | null = null;
+
 renderer.setAnimationLoop((delta) => {
   renderer.render(scene, camera);
 
@@ -99,10 +109,24 @@ renderer.setAnimationLoop((delta) => {
 
   // Update character position if it exists
   if (character && planetMesh) {
-    updateCharacter();
+    // Only update character if not jumping
+    if (!isJumping) {
+      updateCharacter();
+    }
     
-    // Ensure orbit controls target stays with the character
-    _.target.copy(characterPosition);
+    // Debug visualization of terrain detection ray
+    if (debugMode && characterPosition) {
+      if (debugRay) scene.remove(debugRay);
+      
+      // Create debug ray
+      const rayStart = characterPosition.clone().normalize().multiplyScalar(1.5);
+      const rayEnd = new THREE.Vector3(0, 0, 0); // Planet center
+      
+      const debugGeometry = new THREE.BufferGeometry().setFromPoints([rayStart, rayEnd]);
+      const debugMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+      debugRay = new THREE.Line(debugGeometry, debugMaterial);
+      scene.add(debugRay);
+    }
   }
 
   // Animate water level with a subtle sine wave
@@ -134,14 +158,36 @@ renderer.setAnimationLoop((delta) => {
 function updateCharacter() {
   if (!character || !planetMesh) return;
   
-  // Keep character fixed at the center position
-  characterPosition = new Vector3(0, 1.1, 0);
+  // Store the previous position to reset if we don't find valid terrain
+  const previousPosition = characterPosition.clone();
+  
+  // Create a raycaster to detect terrain height
+  const raycaster = new THREE.Raycaster();
+  
+  // Start raycasting from slightly above the character's position in the direction of planet center
+  const rayStart = characterPosition.clone().normalize().multiplyScalar(1.5); // Start outside the planet
+  const rayDirection = rayStart.clone().negate().normalize(); // Point toward planet center
+  
+  raycaster.set(rayStart, rayDirection);
+  
+  // Only raycast against the main terrain mesh, not children (ocean, vegetation, etc.)
+  // We need to filter out child objects since they aren't part of the terrain
+  const intersects = raycaster.intersectObject(planetMesh, false); // false = don't check children
+  
+  // If we found terrain beneath us, adjust height
+  if (intersects.length > 0 && intersects[0].distance < 3) {
+    // Get the collision point and adjust character position
+    const hitPoint = intersects[0].point;
+    
+    // Set character position to sit on terrain (adding small offset for the ball radius)
+    characterPosition = hitPoint.clone().normalize().multiplyScalar(hitPoint.length() + 0.05);
+  } else {
+    // Safety fallback: if no terrain found, keep previous position
+    characterPosition = previousPosition;
+  }
   
   // Apply movement by rotating the planet underneath the character
   if (moveDirection.lengthSq() > 0) {
-    // Calculate rotation axis and angle based on input
-    let rotationAxis = new Vector3();
-    
     // Get camera-relative directions for intuitive controls
     const cameraForward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     // Project onto the horizontal plane and normalize
@@ -153,22 +199,37 @@ function updateCharacter() {
     cameraRight.y = 0;
     cameraRight.normalize();
     
-    // Combine directions based on input - invert both axes for natural controls
+    // Create rotation axis from movement direction
+    let rotationAxis = new Vector3();
+    
+    // Combine directions based on input - inverted for natural controls
     if (moveDirection.x !== 0) {
-      // Left/right movement relative to camera view (inverted)
       rotationAxis.add(cameraForward.clone().multiplyScalar(moveDirection.x));
     }
     if (moveDirection.z !== 0) {
-      // Forward/backward movement relative to camera view (inverted)
       rotationAxis.add(cameraRight.clone().multiplyScalar(-moveDirection.z));
     }
     
-    // Normalize rotation axis and apply rotation to planet
+    // Apply rotation to planet if we have a valid rotation axis
     if (rotationAxis.lengthSq() > 0) {
       rotationAxis.normalize();
       const rotationAngle = MOVE_SPEED;
-      // Invert the rotation to make it feel like controlling the ball
+      
+      // Rotate planet in the opposite direction of movement
       planetMesh.rotateOnWorldAxis(rotationAxis, -rotationAngle);
+      
+      // Update character position after rotation to maintain terrain contact
+      const recastRay = new THREE.Raycaster();
+      recastRay.set(
+        characterPosition.clone().normalize().multiplyScalar(1.5), 
+        characterPosition.clone().negate().normalize()
+      );
+      const recastHits = recastRay.intersectObject(planetMesh, false);
+      
+      if (recastHits.length > 0 && recastHits[0].distance < 3) {
+        const newHitPoint = recastHits[0].point;
+        characterPosition = newHitPoint.clone().normalize().multiplyScalar(newHitPoint.length() + 0.05);
+      }
       
       // Calculate rotation for ball rolling effect
       const rollAxis = rotationAxis.clone().cross(new Vector3(0, 1, 0)).normalize();
@@ -181,6 +242,9 @@ function updateCharacter() {
   // Update character position and rotation
   character.position.copy(characterPosition);
   character.quaternion.copy(characterRotation);
+  
+  // Update orbit controls target
+  _.target.copy(characterPosition);
 }
 
 // Add keyboard controls
@@ -203,17 +267,39 @@ document.addEventListener("keydown", (event) => {
       moveDirection.x = 1;
       break;
     case " ":
-      // Jump effect - make the planet smaller briefly
+      // Jump effect - make the character jump away from planet center
       if (!isJumping) {
         isJumping = true;
-        const originalScale = planetMesh.scale.clone();
-        // Shrink the planet
-        planetMesh.scale.multiplyScalar(0.9);
-        // Return to original size after a delay
-        setTimeout(() => {
-          planetMesh.scale.copy(originalScale);
-          isJumping = false;
-        }, 300);
+        
+        // Set jump velocity in the direction away from planet center
+        const jumpDirection = characterPosition.clone().normalize();
+        const jumpDistance = 0.15; // Jump height
+        
+        // Animation loop for the jump
+        let jumpTime = 0;
+        const jumpDuration = 300; // in milliseconds
+        const jumpInterval = setInterval(() => {
+          jumpTime += 16; // ~60fps
+          
+          // Parabolic jump motion
+          const jumpProgress = jumpTime / jumpDuration;
+          const heightFactor = 4 * jumpProgress * (1 - jumpProgress); // Parabolic curve that peaks at 0.5
+          
+          // Calculate jump offset (max at middle of jump)
+          const offset = jumpDirection.clone().multiplyScalar(jumpDistance * heightFactor);
+          
+          // Apply offset to character position
+          if (character) {
+            // Store the actual position before adding jump offset
+            const basePosition = characterPosition.clone().sub(offset);
+            character.position.copy(basePosition.clone().add(offset));
+          }
+          
+          if (jumpTime >= jumpDuration) {
+            clearInterval(jumpInterval);
+            isJumping = false;
+          }
+        }, 16);
       }
       break;
     case "r":
@@ -227,6 +313,18 @@ document.addEventListener("keydown", (event) => {
       break;
     case "3":
       createPlanet("snowForest");
+      break;
+    case "d":
+      if (event.ctrlKey) {
+        debugMode = !debugMode;
+        console.log("Debug mode:", debugMode);
+        
+        // Clean up debug visualization if turning off
+        if (!debugMode && debugRay) {
+          scene.remove(debugRay);
+          debugRay = null;
+        }
+      }
       break;
   }
 });
@@ -303,16 +401,25 @@ async function createCharacter() {
   }
   
   try {
-    // Create a simple ball character
+    // Create a ball character with more visible materials
     const geometry = new THREE.SphereGeometry(0.05, 32, 32);
+    
+    // Create a material that stands out against the planet terrain
     const material = new THREE.MeshStandardMaterial({ 
-      color: 0x3366ff,
-      roughness: 0.4,
-      metalness: 0.3
+      color: 0xff5522,  // Bright orange color
+      roughness: 0.3,
+      metalness: 0.7,
+      emissive: 0x331100,  // Slight glow
+      emissiveIntensity: 0.2
     });
+    
     character = new THREE.Mesh(geometry, material);
     
-    // Position character at the fixed center position
+    // Enable shadows
+    character.castShadow = true;
+    character.receiveShadow = true;
+    
+    // Position character at the fixed center position initially
     characterPosition = new Vector3(0, 1.1, 0);
     character.position.copy(characterPosition);
     
@@ -362,7 +469,7 @@ async function createPlanet(preset: string | undefined = undefined) {
     if (!hadCharacter) {
       createCharacter();
     } else {
-      // Reset character position to the fixed center position
+      // Reset character position to start point above planet surface
       characterPosition = new Vector3(0, 1.1, 0);
       if (character) {
         character.position.copy(characterPosition);
@@ -371,10 +478,33 @@ async function createPlanet(preset: string | undefined = undefined) {
         moveDirection = new Vector3(0, 0, 0);
         isJumping = false;
       }
-      
-      // Set orbit controls target to the character
-      _.target.copy(characterPosition);
     }
+    
+    // Force terrain detection on the new planet after a small delay
+    // (needed to ensure all planet meshes are properly loaded)
+    setTimeout(() => {
+      if (character && planetMesh) {
+        // Cast a ray down from the character to find terrain
+        const raycaster = new THREE.Raycaster();
+        const rayStart = new Vector3(0, 1.5, 0); // Start above planet
+        const rayDirection = new Vector3(0, -1, 0); // Cast downward
+        
+        raycaster.set(rayStart, rayDirection);
+        const intersects = raycaster.intersectObject(planetMesh, false);
+        
+        if (intersects.length > 0) {
+          // Position character on detected terrain
+          const hitPoint = intersects[0].point;
+          characterPosition = hitPoint.clone().add(new Vector3(0, 0.05, 0)); // Add ball radius
+          character.position.copy(characterPosition);
+          
+          // Update orbit controls target
+          _.target.copy(characterPosition);
+          
+          console.log("Character positioned on new planet terrain");
+        }
+      }
+    }, 500);
     
     // Manually add models to the planet if needed
     if (mesh.children.length < 3) { // Only ocean and atmosphere
