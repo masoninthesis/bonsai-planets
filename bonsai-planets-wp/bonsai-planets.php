@@ -11,6 +11,8 @@
  * Requires PHP: 7.4
  */
 
+namespace BonsaiPlanets\Frontend;
+
 // Exit if accessed directly
 if (!defined('ABSPATH')) exit;
 
@@ -105,8 +107,6 @@ endif;
 
 // Create frontend class
 if (!class_exists('BonsaiPlanets\\Frontend\\Planets')):
-    namespace BonsaiPlanets\Frontend;
-    
     class Planets {
         public function __construct() {
             // Initialize frontend functionality
