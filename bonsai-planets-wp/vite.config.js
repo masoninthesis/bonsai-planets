@@ -1,51 +1,38 @@
 import { defineConfig } from 'vite';
-import path from 'path';
+import { resolve } from 'path';
 
 export default defineConfig({
-  root: path.resolve(__dirname, 'resources'),
-  base: '/wp-content/plugins/bonsai-planets/public/',
-  
   build: {
-    outDir: path.resolve(__dirname, 'public'),
-    emptyOutDir: true,
-    manifest: true,
-    
+    outDir: 'assets',
+    assetsDir: '',
+    emptyOutDir: false,
     rollupOptions: {
       input: {
-        app: path.resolve(__dirname, 'resources/scripts/app.ts')
+        'bonsai-planets-bundle': resolve(__dirname, 'src/main.ts'),
       },
-      
       output: {
         entryFileNames: 'js/[name].js',
-        chunkFileNames: 'js/[name].[hash].js',
+        chunkFileNames: 'js/[name]-[hash].js',
         assetFileNames: ({name}) => {
           if (/\.(gif|jpe?g|png|svg)$/.test(name ?? '')) {
-            return 'images/[name][extname]';
+            return 'images/[name]-[hash][extname]';
           }
-          
           if (/\.css$/.test(name ?? '')) {
             return 'css/[name][extname]';
           }
-          
-          return 'assets/[name][extname]';
+          return 'assets/[name]-[hash][extname]';
         },
       },
     },
   },
-  
-  server: {
-    cors: true,
-    host: '0.0.0.0',
-    port: 3000,
-  },
-  
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'resources'),
+      '@': resolve(__dirname, 'src'),
     },
   },
-  
-  optimizeDeps: {
-    include: ['three']
-  }
+  server: {
+    port: 3000,
+    open: false,
+    cors: true,
+  },
 }); 
